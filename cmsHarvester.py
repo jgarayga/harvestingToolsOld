@@ -107,6 +107,8 @@ import datetime
 import copy
 from random import choice
 
+import FWCore.ParameterSet.Config as cms
+
 # Debugging stuff.
 import pdb
 
@@ -1987,6 +1989,7 @@ class CMSHarvester(object):
             # line. But, this can also contain wildcards so we need
             # DBS to translate it conclusively into a list of explicit
             # dataset names.
+            self.logger.info("Asking DBS for dataset names")
             dataset_names = self.dbs_resolve_dataset_name(input_name)
         elif input_method == "listfile":
             # In this case a file containing a list of dataset names
@@ -2042,7 +2045,7 @@ class CMSHarvester(object):
         self.datasets_to_use = dict(zip(dataset_names,
                                         [None] * len(dataset_names)))
 
-        self.logger.info("  found %d datasets to process:" % \
+        self.logger.info("  found %d dataset(s) to process:" % \
                          len(dataset_names))
         for dataset in dataset_names:
             self.logger.info("  `%s'" % dataset)
@@ -2069,7 +2072,7 @@ class CMSHarvester(object):
         self.datasets_to_ignore = dict(zip(dataset_names,
                                            [None] * len(dataset_names)))
 
-        self.logger.info("  found %d datasets to ignore:" % \
+        self.logger.info("  found %d dataset(s) to ignore:" % \
                          len(dataset_names))
         for dataset in dataset_names:
             self.logger.info("  `%s'" % dataset)
@@ -2242,16 +2245,17 @@ class CMSHarvester(object):
             empty_runs = [i for (i, j) in \
                           self.datasets_information[dataset_name]\
                           ["num_events"].items() if j < 1]
-            self.logger.info("  removed %d empty runs from dataset `%s'" % \
-                             (len(empty_runs), dataset_name))
-            for empty_run in empty_runs:
-                dataset_names_after_checks[dataset_name].remove(empty_run)
+            if len(empty_runs) > 0:
+                self.logger.info("  removed %d empty runs from dataset `%s'" % \
+                                 (len(empty_runs), dataset_name))
+                for empty_run in empty_runs:
+                    dataset_names_after_checks[dataset_name].remove(empty_run)
 
-            # Update the book keeping (for single runs this time).
-            # DEBUG DEBUG DEBUG
-            assert not self.book_keeping_information.has_key(dataset_name)
-            # DEBUG DEBUG DEBUG end
-            self.book_keeping_information[dataset_name] = empty_runs
+                    # Update the book keeping (for single runs this time).
+                    # DEBUG DEBUG DEBUG
+                    assert not self.book_keeping_information.has_key(dataset_name)
+                    # DEBUG DEBUG DEBUG end
+                    self.book_keeping_information[dataset_name] = empty_runs
 
             ###
 
@@ -2669,8 +2673,6 @@ class CMSHarvester(object):
 
         multicrab_config = "\n".join(multicrab_config_lines)
 
-        multicrab_config = multicrab_config % vars()
-
         # End of create_multicrab_config.
         return multicrab_config
 
@@ -2714,6 +2716,9 @@ class CMSHarvester(object):
         config_options.evt_type = config_options.name
         config_options.customisation_file = None
         config_options.filein = "dummy_value"
+        config_options.filetype = "EDM"
+        # This seems to be new in CMSSW 3.3.X, no clue what it does.
+        config_options.gflash = "dummy_value"
 
         ###
 
@@ -2744,7 +2749,7 @@ class CMSHarvester(object):
 
         ###
 
-        config_builder = ConfigBuilder(config_options)
+        config_builder = ConfigBuilder(config_options, with_input=True)
         config_builder.prepare(True)
         config_contents = config_builder.pythonCfgCode
 
@@ -3017,8 +3022,8 @@ class CMSHarvester(object):
 
         """
 
-        self.logger.info("Writing harvesting configuration for `%s'..." % \
-                         dataset_name)
+        self.logger.debug("Writing harvesting configuration for `%s'..." % \
+                          dataset_name)
 
         # Create Python configuration.
         config_contents = self.create_harvesting_config(dataset_name)
@@ -3049,8 +3054,8 @@ class CMSHarvester(object):
 
         """
 
-        self.logger.info("Writing ME-extraction configuration for `%s'..." % \
-                         dataset_name)
+        self.logger.debug("Writing ME-extraction configuration for `%s'..." % \
+                          dataset_name)
 
         # Create Python configuration.
         config_contents = self.create_me_extraction_config(dataset_name)
@@ -3121,7 +3126,7 @@ class CMSHarvester(object):
                 self.logger.fatal(msg)
                 raise Error(msg)
 
-        self.logger.info("  found %d datasets for a total of %d runs" % \
+        self.logger.info("  found %d dataset(s) for a total of %d run(s)" % \
                          (len(self.book_keeping_information),
                           sum([len(i) for i in \
                                self.book_keeping_information.values()])))
@@ -3170,7 +3175,7 @@ class CMSHarvester(object):
         contents_lines.append("# list of processed runs as value.")
         contents_lines.append("# Everything present in the dictionary")
         contents_lines.append("# has been processed by cmsHarvester.")
-        contents_lines.append("# Admittedly this means nothing but that the")
+        contents_lines.append("# Admittedly this only means that the")
         contents_lines.append("# configurations were created at some point.")
         contents_lines.append("")
         contents_lines.append(repr(self.book_keeping_information))
@@ -3497,11 +3502,13 @@ class CMSHarvester(object):
                 # user. These are not a `serious problem'. We also
                 # skip SystemExit, which is the exception thrown when
                 # one calls sys.exit(). This, for example, is done by
-                # the option parser after calling
-                # print_help(). Everything else we catch here is a
+                # the option parser after calling print_help(). We
+                # also have to catch all `no such option'
+                # complaints. Everything else we catch here is a
                 # `serious problem'.
-                if not isinstance(err, KeyboardInterrupt) and \
-                       not isinstance(err, SystemExit):
+                if isinstance(err, SystemExit):
+                    self.logger.fatal(err.code)
+                elif not isinstance(err, KeyboardInterrupt):
                     self.logger.fatal("!" * 50)
                     self.logger.fatal("  This looks like a serious problem.")
                     self.logger.fatal("  If you are sure you followed all " \
