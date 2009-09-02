@@ -26,7 +26,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.1"
+__version__ = "1.1.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
