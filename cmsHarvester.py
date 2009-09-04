@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.3.1"
+__version__ = "1.3.2"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1027,51 +1027,53 @@ class CMSHarvester(object):
 
     ##########
 
-    # BUG BUG BUG
-    # I think this actually is a bit too strict. It looks like we only
-    # have to filter out CAF.
-    def pick_a_site(self, sites):
+    def pick_a_site(self, sites, cmssw_version):
         """Select a site from the list.
 
         Basically just select one randomly, but be careful not to
-        submit to things like T0, T1, or CAF.
-
-        NOTE: Even though we're only using these to white-list SEs, we
-        have to be careful. If, for example, one white-lists
-        caf.cern.ch, CRAB just refuses to create the job. (Yes, I
-        know, unless...)
+        submit to things like T0.
 
         """
 
-##        # Yes, these are hard-coded. In principle these could also
-##        # come from the SiteDB.
-##        sites_t0 = [
-##            "srm-cms.cern.ch"
-##            ]
-##        sites_t1 = [
-##            "ccsrm.in2p3.fr",
-##            "cmssrm.fnal.gov",
-##            "gridka-dCache.fzk.de",
-##            "srm-cms.cern.ch",
-##            "srm-cms.gridpp.rl.ac.uk",
-##            "srm-v2-cms.cr.cnaf.infn.it",
-##            "srm.grid.sinica.edu.tw",
-##            "srm2.grid.sinica.edu.tw",
-##            "srmcms.pic.es"
-##            ]
+        self.logger.info("Selecting a site (SE)")
 
+        # This is the T0.
         sites_forbidden = ["caf.cern.ch"]
 
         for site in sites_forbidden:
             if site in sites:
                 sites.remove(site)
 
-        # Just pick one.
-        site_name = choice(sites)
+        site_name = None
+        while len(sites) > 0 and \
+              site_name is None:
+            # Just pick one.
+            se_name = choice(sites)
+            # But check that it hosts the CMSSW version we want.
+            cmd = "lcg-info --list-ce " \
+                  "--query 'Tag=VO-cms-%s," \
+                  "CEStatus=Production," \
+                  "CloseSE=%s'" % \
+                  (cmssw_version, se_name)
+            (status, output) = commands.getstatusoutput(cmd)
+            if status != 0:
+                self.logger.error("Could not check site information " \
+                                  "for site `%s'" % se_name)
+            else:
+                if len(output) > 0:
+                    site_name = se_name
+                    break
+                else:
+                    self.logger.debug("  --> rejecting site `%s'" % se_name)
+                    sites.remove(se_name)
+
+        if site_name is None:
+            self.logger.error("  --> no matching site found")
+        else:
+            self.logger.debug("  --> selected site `%s'" % site_name)
 
         # End of pick_a_site.
         return site_name
-    # BUG BUG BUG end
 
     ##########
 
@@ -2416,7 +2418,10 @@ class CMSHarvester(object):
             for run_number in self.datasets_information[dataset_name]["runs"]:
                 max_events = max(self.datasets_information[dataset_name]["sites"][run_number].values())
                 sites_with_max_events = [i[0] for i in self.datasets_information[dataset_name]["sites"][run_number].items() if i[1] == max_events]
-                selected_site = self.pick_a_site(sites_with_max_events)
+                cmssw_version = self.datasets_information[dataset_name] \
+                                ["cmssw_version"]
+                selected_site = self.pick_a_site(sites_with_max_events,
+                                                 cmssw_version)
                 self.datasets_information[dataset_name]["sites"][run_number] = {selected_site: max_events}
                 #self.datasets_information[dataset_name]["sites"][run_number] = [selected_site]
 
@@ -2927,7 +2932,9 @@ class CMSHarvester(object):
                 # one of the sites. Otherwise there is nothing to
                 # choose.
                 if len(site_names) > 1:
-                    site_name = self.pick_a_site(site_names)
+                    cmssw_version = self.datasets_information[dataset_name] \
+                                    ["cmssw_version"]
+                    site_name = self.pick_a_site(site_names, cmssw_version)
                 else:
                     site_name = site_names[0]
                 nevents = self.datasets_information[dataset_name]["num_events"][run]
@@ -3518,7 +3525,9 @@ class CMSHarvester(object):
         # to be easier to follow, sacrificing a bit of efficiency.
         self.datasets_information = {}
         self.logger.info("Collecting information for all datasets to process")
-        for dataset_name in self.datasets_to_use.keys():
+        dataset_names = self.datasets_to_use.keys()
+        dataset_names.sort()
+        for dataset_name in dataset_names:
 
             # Tell the user which dataset: nice with many datasets.
             sep_line = "-" * 30
