@@ -26,7 +26,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.1.1"
+__version__ = "1.2"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -47,14 +47,7 @@ twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
 ##
 ## - We could get rid of most of the `and dataset.status = VALID'
 ##   pieces in the DBS queries.
-## - Do run-by-run sanity checks instead of per dataset.
-## - Remove empty runs (i.e. zero events) in the checking step, but do
-##   keep them in the book keeping.
-##   NOTE: This waits for the time when DBS will actually tell us the
-##   number of events in a run.
 ## - Change to more efficient grid scheduler.
-## - Translate the GRID section of the CRAB configs into EDG, right?
-##   Isn't the former deprecated? Or is it the other way around?
 ## - Implement preference list for sites to submit to:
 ##   - no T1, since that does not work,
 ##   - check that the site status is ok.
@@ -69,29 +62,16 @@ twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
 ## - Fully implement all harvesting types.
 ##   --> Discuss with Andreas what exactly should be in there. And be
 ##       careful with the run numbers!
-## - Which GlobalTag to use for data (see comment about CRAFT08 data)?
-##   --> After talking to Luca: take GlobalTag for data from the
-##       config. Unfortunately this does not work (looks like a bug in
-##       the DBS command line interface). Waiting for email reply from
-##       the experts.
-## - Implement overriding of GlobalTag with user-specified one.
 ## - Add the (second-step) harvesting config file to the (first-step)
 ##   ME extraction job to make sure it does not get lost.
-## - Implement sanity checks on harvesting type vs. data type.
-## - Implement exit message.
+## - Improve sanity checks on harvesting type vs. data type.
 ## - Implement reference histograms.
 ##   1) User-specified reference dataset.
 ##   2) Educated guess based on dataset name.
 ##   3) References from GlobalTag.
 ##   4) No reference at all.
-## - Fix this problem with total_number_of_events = -1 not being
-##   allowed by CRAB.
 ## - Is this options.evt_type used anywhere?
-## - We need a (better) naming convention for the harvesting output files.
 ## - Combine all these dbs_resolve_xxx into a single call to DBS(?).
-## - ??? How large can run numbers become ???
-##   --> DQMFileSaver assumes 9 digits (%09d).
-## - ??? And event numbers ???
 ## - Implement CRAB server use?
 ## - Add implementation of email address of user. (Only necessary for
 ##   CRAB server.)
@@ -2114,7 +2094,7 @@ class CMSHarvester(object):
             if dataset_name in self.datasets_to_ignore.keys():
                 del dataset_names_filtered[dataset_name]
 
-        self.logger.info("  removed %d datasets" % \
+        self.logger.info("  --> Removed %d datasets" % \
                          (len(self.datasets_to_use) -
                           len(dataset_names_filtered)))
 
@@ -2160,10 +2140,10 @@ class CMSHarvester(object):
                 if len(dataset_names_filtered[dataset_name]) < 1:
                     del dataset_names_filtered[dataset_name]
 
-        self.logger.info("  removed %d datasets" % \
+        self.logger.info("  --> Removed %d datasets" % \
                          (len(self.datasets_to_use) -
                           len(dataset_names_filtered)))
-        self.logger.debug("  (removed %d runs)" % nruns_removed)
+        self.logger.debug("      (removed %d runs)" % nruns_removed)
 
         self.datasets_to_use = dataset_names_filtered
 
@@ -2320,30 +2300,39 @@ class CMSHarvester(object):
             # If we're running single-step harvesting: only allow
             # samples located on a single site.
             if self.harvesting_mode == "single-step":
-                # BUG BUG BUG
-                # Should be able to improve this. There is no real
-                # need to remove a whole dataset at this stage if it
-                # contains a single spread-out run.
-                num_sites = max([len(i) for i in \
-                                 self.datasets_information[dataset_name] \
-                                 ["sites"].values()])
-                if num_sites > 1:
-                    # Cannot do this with a single-step job, not even
-                    # in force mode. It just does not make sense.
-                    msg = "  Dataset `%s' contains runs spread across more " \
-                          "than one site.\n" \
-                          "Cannot run single-step harvesting on samples " \
-                          "spread across multiple sites" % \
-                          dataset_name
-                    del dataset_names_after_checks[dataset_name]
-                    self.logger.warning("%s " \
-                                        "--> skipping" % msg)
-                    continue
-                # BUG BUG BUG end
+                for run_number in self.datasets_information[dataset_name] \
+                        ["runs"]:
+                    num_sites = len(self.datasets_information[dataset_name] \
+                                ["sites"][run_number])
+                    if num_sites > 1:
+                        # Cannot do this with a single-step job, not
+                        # even in force mode. It just does not make
+                        # sense.
+                        msg = "  Dataset `%s', run %d is spread across more " \
+                              "than one site.\n" \
+                              "  Cannot run single-step harvesting on " \
+                              "samples spread across multiple sites" % \
+                              (dataset_name, run_number)
+                        dataset_names_after_checks[dataset_name].remove(run_number)
+                        self.logger.warning("%s " \
+                                            "--> skipping" % msg)
 
         ###
 
-        self.logger.info("  removed %d datasets" % \
+        # If we emptied out a complete dataset, remove the whole
+        # thing.
+        dataset_names_after_checks_tmp = copy.deepcopy(dataset_names_after_checks)
+        for (dataset_name, runs) in dataset_names_after_checks.iteritems():
+            if len(runs) < 1:
+                self.logger.info("  Removing dataset without any runs " \
+                                 "(left) `%s'" % \
+                                 dataset_name)
+                del dataset_names_after_checks_tmp[dataset_name]
+        dataset_names_after_checks = dataset_names_after_checks_tmp
+
+        ###
+
+        self.logger.info("  --> Removed %d datasets" % \
                          (len(self.datasets_to_use) -
                           len(dataset_names_after_checks)))
 
