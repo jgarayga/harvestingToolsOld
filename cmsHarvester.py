@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.3.2"
+__version__ = "1.3.3"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -300,6 +300,9 @@ class CMSHarvester(object):
         self.datasets_to_ignore = {}
         # This, in turn, will hold all book keeping information.
         self.book_keeping_information = {}
+
+        # Cache for CMSSW version availability at different sites.
+        self.sites_and_versions_cache = {}
 
         # Store command line options for later use.
         if cmd_line_opts is None:
@@ -1035,8 +1038,6 @@ class CMSHarvester(object):
 
         """
 
-        self.logger.info("Selecting a site (SE)")
-
         # This is the T0.
         sites_forbidden = ["caf.cern.ch"]
 
@@ -1044,28 +1045,52 @@ class CMSHarvester(object):
             if site in sites:
                 sites.remove(site)
 
+        # Looks like we have to do some caching here, otherwise things
+        # become waaaay toooo sloooooow. So that's what the
+        # sites_and_versions_cache does.
+
         site_name = None
         while len(sites) > 0 and \
               site_name is None:
+
             # Just pick one.
             se_name = choice(sites)
+
             # But check that it hosts the CMSSW version we want.
-            cmd = "lcg-info --list-ce " \
-                  "--query 'Tag=VO-cms-%s," \
-                  "CEStatus=Production," \
-                  "CloseSE=%s'" % \
-                  (cmssw_version, se_name)
-            (status, output) = commands.getstatusoutput(cmd)
-            if status != 0:
-                self.logger.error("Could not check site information " \
-                                  "for site `%s'" % se_name)
-            else:
-                if len(output) > 0:
+
+            if self.sites_and_versions_cache.has_key(se_name) and \
+                   self.sites_and_versions_cache[se_name].has_key(cmssw_version):
+                if self.sites_and_versions_cache[se_name][cmssw_version]:
                     site_name = se_name
                     break
                 else:
                     self.logger.debug("  --> rejecting site `%s'" % se_name)
                     sites.remove(se_name)
+
+            else:
+                self.logger.info("Checking if site `%s' " \
+                                 "has CMSSW version `%s'" % \
+                                 (se_name, cmssw_version))
+                self.sites_and_versions_cache[se_name] = {}
+
+                cmd = "lcg-info --list-ce " \
+                      "--query 'Tag=VO-cms-%s," \
+                      "CEStatus=Production," \
+                      "CloseSE=%s'" % \
+                      (cmssw_version, se_name)
+                (status, output) = commands.getstatusoutput(cmd)
+                if status != 0:
+                    self.logger.error("Could not check site information " \
+                                      "for site `%s'" % se_name)
+                else:
+                    if len(output) > 0:
+                        self.sites_and_versions_cache[se_name][cmssw_version] = True
+                        site_name = se_name
+                        break
+                    else:
+                        self.sites_and_versions_cache[se_name][cmssw_version] = False
+                        self.logger.debug("  --> rejecting site `%s'" % se_name)
+                        sites.remove(se_name)
 
         if site_name is None:
             self.logger.error("  --> no matching site found")
