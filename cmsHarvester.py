@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -2852,6 +2852,7 @@ class CMSHarvester(object):
         tmp.append("# This removes the default blacklisting of T1 sites.")
         tmp.append("remove_default_blacklist = 1")
         tmp.append("rb = CERN")
+        tmp.append("role = t1access")
         tmp.append("")
         tmp.append("[USER]")
         tmp.append("copy_data = 1")
