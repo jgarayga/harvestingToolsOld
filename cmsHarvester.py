@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20090902
+## Last change: 20090904
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -22,11 +22,14 @@ your favourite is missing):
 - RelVal : Run for release validation samples. Makes heavy use of MC
            truth information. Maps to the `validationHarvesting' sequence.
 
+- Preproduction : Run for MC preproduction samples. Maps to the
+                  `validationprodHarvesting' sequence.
+
 """
 
 ###########################################################################
 
-__version__ = "1.2"
+__version__ = "1.3.0"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -47,10 +50,7 @@ twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
 ##
 ## - We could get rid of most of the `and dataset.status = VALID'
 ##   pieces in the DBS queries.
-## - Change to more efficient grid scheduler.
-## - Implement preference list for sites to submit to:
-##   - no T1, since that does not work,
-##   - check that the site status is ok.
+## - Change to a more efficient grid scheduler.
 ## - Implement incremental harvesting. Requires some changes to the
 ##   book keeping to store the harvested number of events for each
 ##   run. Also requires some changes to the dataset checking to see if
@@ -85,9 +85,25 @@ import logging
 import optparse
 import datetime
 import copy
+from inspect import getargspec
 from random import choice
 
-import FWCore.ParameterSet.Config as cms
+# These we need to communicate with DBS global DBSAPI
+from DBSAPI.dbsApi import DbsApi
+import DBSAPI.dbsException
+import DBSAPI.dbsApiException
+# and these we need to parse the DBS output.
+global xml
+global SAXParseException
+import xml.sax
+from xml.sax import SAXParseException
+
+import Configuration.PyReleaseValidation
+from Configuration.PyReleaseValidation.ConfigBuilder import \
+     ConfigBuilder, defaultOptions
+# from Configuration.PyReleaseValidation.cmsDriverOptions import options, python_config_filename
+
+#import FWCore.ParameterSet.Config as cms
 
 # Debugging stuff.
 import pdb
@@ -167,18 +183,29 @@ class CMSHarvester(object):
 
         # These are the harvesting types allowed. See the head of this
         # file for more information.
-        self.harvesting_types = ["DQMOffline", "RelVal"]
+        self.harvesting_types = [
+            "DQMOffline",
+            "RelVal",
+            "preproduction"
+            ]
 
-        # These are the two possible harvesting modes:
+        # These are the possible harvesting modes:
         #   - Single-step: harvesting takes place on-site in a single
         #   step. For each samples only a single ROOT file containing
         #   the harvesting results is returned.
+        #   - Single-step-allow-partial: special hack to allow
+        #   harvesting of partial statistics using single-step
+        #   harvesting on spread-out samples.
         #   - Two-step: harvesting takes place in two steps. The first
         #   step returns a series of monitoring elenent summaries for
         #   each sample. The second step then merges these summaries
         #   locally and does the real harvesting. This second step
         #   produces the ROOT file containing the harvesting results.
-        self.harvesting_modes = ["single-step", "two-step"]
+        self.harvesting_modes = [
+            "single-step",
+            "single-step-allow-partial",
+            "two-step"
+            ]
 
         # It is possible to specify a GlobalTag that will override any
         # choices (regarding GlobalTags) made by the cmsHarvester.
@@ -206,11 +233,11 @@ class CMSHarvester(object):
         harvesting_info["RelVal"]["eventcontent"] = None
         harvesting_info["RelVal"]["harvesting"] = "AtRunEnd"
 
-##        harvesting_info["ProdVal"] = {}
-##        harvesting_info["ProdVal"]["step_string"] = "validationprodHarvesting"
-##        harvesting_info["ProdVal"]["beamspot"] = None
-##        harvesting_info["ProdVal"]["eventcontent"] = None
-##        harvesting_info["ProdVal"]["harvesting"] = "AtRunEnd"
+        harvesting_info["preproduction"] = {}
+        harvesting_info["preproduction"]["step_string"] = "validationprodHarvesting"
+        harvesting_info["preproduction"]["beamspot"] = None
+        harvesting_info["preproduction"]["eventcontent"] = None
+        harvesting_info["preproduction"]["harvesting"] = "AtRunEnd"
 
         self.harvesting_info = harvesting_info
 
@@ -326,7 +353,7 @@ class CMSHarvester(object):
     def ident_string(self):
         "Spit out an identification string for cmsHarvester.py."
 
-        ident_str = "`Created by cmsHarvester.py " \
+        ident_str = "`cmsHarvester.py " \
                     "version %s': cmsHarvester.py %s" % \
                     (__version__,
                      reduce(lambda x, y: x+' '+y, sys.argv[1:]))
@@ -370,7 +397,7 @@ class CMSHarvester(object):
         tmp.append("# %s" % time_stamp)
         tmp.append("# WARNING: This file was created automatically!")
         tmp.append("")
-        tmp.append("# %s" % ident_str)
+        tmp.append("# Created by %s" % ident_str)
 
         header = "\n".join(tmp)
 
@@ -1375,17 +1402,6 @@ class CMSHarvester(object):
 
         """
 
-        # These we need to communicate with DBS
-        # global DBSAPI
-        from DBSAPI.dbsApi import DbsApi
-        import DBSAPI.dbsException
-        import DBSAPI.dbsApiException
-        # and these we need to parse the DBS output.
-        global xml
-        global SAXParseException
-        import xml.sax
-        from xml.sax import SAXParseException
-
         try:
             args={}
             args["url"]= "http://cmsdbsprod.cern.ch/cms_dbs_prod_global/" \
@@ -1778,136 +1794,254 @@ class CMSHarvester(object):
 
     ##########
 
-    def dbs_check_dataset_spread(self, dataset_name):
-        """Figure out across how many sites this dataset is spread.
+##    def dbs_check_dataset_spread(self, dataset_name):
+##        """Figure out across how many sites this dataset is spread.
 
-        NOTE: This is something we need to figure out per run, since
-        we want to submit harvesting jobs per run.
+##        NOTE: This is something we need to figure out per run, since
+##        we want to submit harvesting jobs per run.
 
-        Basically three things can happen with a given dataset:
-        - the whole dataset is available on a single site,
-        - the whole dataset is available (mirrored) at multiple sites,
-        - the dataset is spread across multiple sites and there is no
-          single site containing the full dataset in one place.
+##        Basically three things can happen with a given dataset:
+##        - the whole dataset is available on a single site,
+##        - the whole dataset is available (mirrored) at multiple sites,
+##        - the dataset is spread across multiple sites and there is no
+##          single site containing the full dataset in one place.
 
-        NOTE: If all goes well, it should not be possible that
-        anything but a _full_ dataset is mirrored. So we ignore the
-        possibility in which for example one site contains the full
-        dataset and two others mirror half of it.
-        ANOTHER NOTE: According to some people this last case _could_
-        actually happen. I will not design for it, but make sure it
-        ends up as a false negative, in which case we just loose some
-        efficiency and treat the dataset (unnecessarily) as
-        spread-out.
+##        NOTE: If all goes well, it should not be possible that
+##        anything but a _full_ dataset is mirrored. So we ignore the
+##        possibility in which for example one site contains the full
+##        dataset and two others mirror half of it.
+##        ANOTHER NOTE: According to some people this last case _could_
+##        actually happen. I will not design for it, but make sure it
+##        ends up as a false negative, in which case we just loose some
+##        efficiency and treat the dataset (unnecessarily) as
+##        spread-out.
 
-        We don't really care about the first two possibilities, but in
-        the third case we need to make sure to run the harvesting in
-        two-step mode.
+##        We don't really care about the first two possibilities, but in
+##        the third case we need to make sure to run the harvesting in
+##        two-step mode.
 
-        This method checks with DBS which of the above cases is true
-        for the dataset name given, and returns a 1 for the first two
-        cases, and the number of sites across which the dataset is
-        spread for the third case.
+##        This method checks with DBS which of the above cases is true
+##        for the dataset name given, and returns a 1 for the first two
+##        cases, and the number of sites across which the dataset is
+##        spread for the third case.
 
-        The way in which this is done is by asking how many files each
-        site has for the dataset. In the first case there is only one
-        site, in the second case all sites should have the same number
-        of files (i.e. the total number of files in the dataset) and
-        in the third case the file counts from all sites should add up
-        to the total file count for the dataset.
+##        The way in which this is done is by asking how many files each
+##        site has for the dataset. In the first case there is only one
+##        site, in the second case all sites should have the same number
+##        of files (i.e. the total number of files in the dataset) and
+##        in the third case the file counts from all sites should add up
+##        to the total file count for the dataset.
 
-        """
+##        """
 
-        # DEBUG DEBUG DEBUG
-        # If we get here DBS should have been set up already.
-        assert not self.dbs_api is None
-        # DEBUG DEBUG DEBUG end
+##        # DEBUG DEBUG DEBUG
+##        # If we get here DBS should have been set up already.
+##        assert not self.dbs_api is None
+##        # DEBUG DEBUG DEBUG end
 
-        api = self.dbs_api
-        dbs_query = "find run, run.numevents, site, file.count " \
-                    "where dataset = %s " \
-                    "and dataset.status = VALID" % \
-                    dataset_name
-        try:
-            api_result = api.executeQuery(dbs_query)
-        except DbsApiException:
-            msg = "ERROR: Could not execute DBS query"
-            self.logger.fatal(msg)
-            raise Error(msg)
+##        api = self.dbs_api
+##        dbs_query = "find run, run.numevents, site, file.count " \
+##                    "where dataset = %s " \
+##                    "and dataset.status = VALID" % \
+##                    dataset_name
+##        try:
+##            api_result = api.executeQuery(dbs_query)
+##        except DbsApiException:
+##            msg = "ERROR: Could not execute DBS query"
+##            self.logger.fatal(msg)
+##            raise Error(msg)
 
-        # Index things by run number. No cross-check is done to make
-        # sure we get results for each and every run in the
-        # dataset. I'm not sure this would make sense since we'd be
-        # cross-checking DBS info with DBS info anyway. Note that we
-        # use the file count per site to see if we're dealing with an
-        # incomplete vs. a mirrored dataset.
-        sample_info = {}
-        try:
-            class Handler(xml.sax.handler.ContentHandler):
-                def startElement(self, name, attrs):
-                    if name == "result":
-                        run_number = int(attrs["RUNS_RUNNUMBER"])
-                        site_name = str(attrs["STORAGEELEMENT_SENAME"])
-                        file_count = int(attrs["COUNT_FILES"])
-                        # BUG BUG BUG
-                        # Doh! For some reason DBS never returns any other
-                        # event count than zero.
-                        event_count = int(attrs["RUNS_NUMBEROFEVENTS"])
-                        # BUG BUG BUG end
-                        info = (site_name, file_count, event_count)
-                        try:
-                            sample_info[run_number].append(info)
-                        except KeyError:
-                            sample_info[run_number] = [info]
-            xml.sax.parseString(api_result, Handler())
-        except SAXParseException:
-            msg = "ERROR: Could not parse DBS server output"
-            self.logger.fatal(msg)
-            raise Error(msg)
+##        # Index things by run number. No cross-check is done to make
+##        # sure we get results for each and every run in the
+##        # dataset. I'm not sure this would make sense since we'd be
+##        # cross-checking DBS info with DBS info anyway. Note that we
+##        # use the file count per site to see if we're dealing with an
+##        # incomplete vs. a mirrored dataset.
+##        sample_info = {}
+##        try:
+##            class Handler(xml.sax.handler.ContentHandler):
+##                def startElement(self, name, attrs):
+##                    if name == "result":
+##                        run_number = int(attrs["RUNS_RUNNUMBER"])
+##                        site_name = str(attrs["STORAGEELEMENT_SENAME"])
+##                        file_count = int(attrs["COUNT_FILES"])
+##                        # BUG BUG BUG
+##                        # Doh! For some reason DBS never returns any other
+##                        # event count than zero.
+##                        event_count = int(attrs["RUNS_NUMBEROFEVENTS"])
+##                        # BUG BUG BUG end
+##                        info = (site_name, file_count, event_count)
+##                        try:
+##                            sample_info[run_number].append(info)
+##                        except KeyError:
+##                            sample_info[run_number] = [info]
+##            xml.sax.parseString(api_result, Handler())
+##        except SAXParseException:
+##            msg = "ERROR: Could not parse DBS server output"
+##            self.logger.fatal(msg)
+##            raise Error(msg)
 
-        # Now translate this into a slightly more usable mapping.
-        sites = {}
-        for (run_number, site_info) in sample_info.iteritems():
-            # Quick-n-dirty trick to see if all file counts are the
-            # same.
-            unique_file_counts = set([i[1] for i in site_info])
-            if len(unique_file_counts) == 1:
-                # Okay, so this must be a mirrored dataset.
-                # We have to pick one but we have to be careful. We
-                # cannot submit to things like a T0, a T1, or CAF.
-                site_names = [self.pick_a_site([i[0] for i in site_info])]
-                nevents = [site_info[0][2]]
-            else:
-                # Looks like this is a spread-out sample.
-                site_names = [i[0] for i in site_info]
-                nevents = [i[2] for i in site_info]
-            sites[run_number] = zip(site_names, nevents)
+##        # Now translate this into a slightly more usable mapping.
+##        sites = {}
+##        for (run_number, site_info) in sample_info.iteritems():
+##            # Quick-n-dirty trick to see if all file counts are the
+##            # same.
+##            unique_file_counts = set([i[1] for i in site_info])
+##            if len(unique_file_counts) == 1:
+##                # Okay, so this must be a mirrored dataset.
+##                # We have to pick one but we have to be careful. We
+##                # cannot submit to things like a T0, a T1, or CAF.
+##                site_names = [self.pick_a_site([i[0] for i in site_info])]
+##                nevents = [site_info[0][2]]
+##            else:
+##                # Looks like this is a spread-out sample.
+##                site_names = [i[0] for i in site_info]
+##                nevents = [i[2] for i in site_info]
+##            sites[run_number] = zip(site_names, nevents)
 
-        self.logger.debug("Sample `%s' spread is:" % dataset_name)
-        run_numbers = sites.keys()
-        run_numbers.sort()
-        for run_number in run_numbers:
-            self.logger.debug("  run # %6d: %d sites (%s)" % \
-                              (run_number,
-                               len(sites[run_number]),
-                               ", ".join([i[0] for i in sites[run_number]])))
+##        self.logger.debug("Sample `%s' spread is:" % dataset_name)
+##        run_numbers = sites.keys()
+##        run_numbers.sort()
+##        for run_number in run_numbers:
+##            self.logger.debug("  run # %6d: %d sites (%s)" % \
+##                              (run_number,
+##                               len(sites[run_number]),
+##                               ", ".join([i[0] for i in sites[run_number]])))
 
-        # End of dbs_check_dataset_spread.
-        return sites
+##        # End of dbs_check_dataset_spread.
+##        return sites
+
+##    # DEBUG DEBUG DEBUG
+##    # Just kept for debugging now.
+##    def dbs_check_dataset_spread_old(self, dataset_name):
+##        """Figure out across how many sites this dataset is spread.
+
+##        NOTE: This is something we need to figure out per run, since
+##        we want to submit harvesting jobs per run.
+
+##        Basically three things can happen with a given dataset:
+##        - the whole dataset is available on a single site,
+##        - the whole dataset is available (mirrored) at multiple sites,
+##        - the dataset is spread across multiple sites and there is no
+##          single site containing the full dataset in one place.
+
+##        NOTE: If all goes well, it should not be possible that
+##        anything but a _full_ dataset is mirrored. So we ignore the
+##        possibility in which for example one site contains the full
+##        dataset and two others mirror half of it.
+##        ANOTHER NOTE: According to some people this last case _could_
+##        actually happen. I will not design for it, but make sure it
+##        ends up as a false negative, in which case we just loose some
+##        efficiency and treat the dataset (unnecessarily) as
+##        spread-out.
+
+##        We don't really care about the first two possibilities, but in
+##        the third case we need to make sure to run the harvesting in
+##        two-step mode.
+
+##        This method checks with DBS which of the above cases is true
+##        for the dataset name given, and returns a 1 for the first two
+##        cases, and the number of sites across which the dataset is
+##        spread for the third case.
+
+##        The way in which this is done is by asking how many files each
+##        site has for the dataset. In the first case there is only one
+##        site, in the second case all sites should have the same number
+##        of files (i.e. the total number of files in the dataset) and
+##        in the third case the file counts from all sites should add up
+##        to the total file count for the dataset.
+
+##        """
+
+##        # DEBUG DEBUG DEBUG
+##        # If we get here DBS should have been set up already.
+##        assert not self.dbs_api is None
+##        # DEBUG DEBUG DEBUG end
+
+##        api = self.dbs_api
+##        dbs_query = "find run, run.numevents, site, file.count " \
+##                    "where dataset = %s " \
+##                    "and dataset.status = VALID" % \
+##                    dataset_name
+##        try:
+##            api_result = api.executeQuery(dbs_query)
+##        except DbsApiException:
+##            msg = "ERROR: Could not execute DBS query"
+##            self.logger.fatal(msg)
+##            raise Error(msg)
+
+##        # Index things by run number. No cross-check is done to make
+##        # sure we get results for each and every run in the
+##        # dataset. I'm not sure this would make sense since we'd be
+##        # cross-checking DBS info with DBS info anyway. Note that we
+##        # use the file count per site to see if we're dealing with an
+##        # incomplete vs. a mirrored dataset.
+##        sample_info = {}
+##        try:
+##            class Handler(xml.sax.handler.ContentHandler):
+##                def startElement(self, name, attrs):
+##                    if name == "result":
+##                        run_number = int(attrs["RUNS_RUNNUMBER"])
+##                        site_name = str(attrs["STORAGEELEMENT_SENAME"])
+##                        file_count = int(attrs["COUNT_FILES"])
+##                        # BUG BUG BUG
+##                        # Doh! For some reason DBS never returns any other
+##                        # event count than zero.
+##                        event_count = int(attrs["RUNS_NUMBEROFEVENTS"])
+##                        # BUG BUG BUG end
+##                        info = (site_name, file_count, event_count)
+##                        try:
+##                            sample_info[run_number].append(info)
+##                        except KeyError:
+##                            sample_info[run_number] = [info]
+##            xml.sax.parseString(api_result, Handler())
+##        except SAXParseException:
+##            msg = "ERROR: Could not parse DBS server output"
+##            self.logger.fatal(msg)
+##            raise Error(msg)
+
+##        # Now translate this into a slightly more usable mapping.
+##        sites = {}
+##        for (run_number, site_info) in sample_info.iteritems():
+##            # Quick-n-dirty trick to see if all file counts are the
+##            # same.
+##            unique_file_counts = set([i[1] for i in site_info])
+##            if len(unique_file_counts) == 1:
+##                # Okay, so this must be a mirrored dataset.
+##                # We have to pick one but we have to be careful. We
+##                # cannot submit to things like a T0, a T1, or CAF.
+##                site_names = [self.pick_a_site([i[0] for i in site_info])]
+##                nevents = [site_info[0][2]]
+##            else:
+##                # Looks like this is a spread-out sample.
+##                site_names = [i[0] for i in site_info]
+##                nevents = [i[2] for i in site_info]
+##            sites[run_number] = zip(site_names, nevents)
+
+##        self.logger.debug("Sample `%s' spread is:" % dataset_name)
+##        run_numbers = sites.keys()
+##        run_numbers.sort()
+##        for run_number in run_numbers:
+##            self.logger.debug("  run # %6d: %d site(s) (%s)" % \
+##                              (run_number,
+##                               len(sites[run_number]),
+##                               ", ".join([i[0] for i in sites[run_number]])))
+
+##        # End of dbs_check_dataset_spread_old.
+##        return sites
+##    # DEBUG DEBUG DEBUG end
 
     ##########
 
-    def dbs_check_dataset_num_events(self, dataset_name):
+    def dbs_check_dataset_spread(self, dataset_name):
         """Figure out the number of events in each run of this dataset.
 
         This is a more efficient way of doing this than calling
         dbs_resolve_number_of_events for each run.
 
-        # BUG BUG BUG
-        # This might very well not work at all for spread-out samples. (?)
-        # BUG BUG BUG end
-
         """
+
+        self.logger.debug("Checking spread of dataset `%s'" % dataset_name)
 
         # DEBUG DEBUG DEBUG
         # If we get here DBS should have been set up already.
@@ -1915,7 +2049,8 @@ class CMSHarvester(object):
         # DEBUG DEBUG DEBUG end
 
         api = self.dbs_api
-        dbs_query = "find run.number, file.name, file.numevents where dataset = %s " \
+        dbs_query = "find run.number, site, file.name, file.numevents " \
+                    "where dataset = %s " \
                     "and dataset.status = VALID" % \
                     dataset_name
         try:
@@ -1931,24 +2066,125 @@ class CMSHarvester(object):
                 def startElement(self, name, attrs):
                     if name == "result":
                         run_number = int(attrs["RUNS_RUNNUMBER"])
+                        site_name = str(attrs["STORAGEELEMENT_SENAME"])
                         file_name = str(attrs["FILES_LOGICALFILENAME"])
                         nevents = int(attrs["FILES_NUMBEROFEVENTS"])
-                        try:
-                            files_info[run_number][file_name] = nevents
-                        except KeyError:
-                            files_info[run_number] = {file_name: nevents}
+                        # I know, this is a bit of a kludge.
+                        if not files_info.has_key(run_number):
+                            # New run.
+                            files_info[run_number] = {}
+                            files_info[run_number][file_name] = (nevents,
+                                                                 [site_name])
+                        elif not files_info[run_number].has_key(file_name):
+                            # New file for a known run.
+                            files_info[run_number][file_name] = (nevents,
+                                                                 [site_name])
+                        else:
+                            # New entry for a known file for a known run.
+                            # DEBUG DEBUG DEBUG
+                            # Each file should have the same number of
+                            # events independent of the site it's at.
+                            assert nevents == files_info[run_number][file_name][0]
+                            # DEBUG DEBUG DEBUG end
+                            files_info[run_number][file_name][1].append(site_name)
             xml.sax.parseString(api_result, Handler())
         except SAXParseException:
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
 
+        # And another bit of a kludge.
         num_events_catalog = {}
         for run_number in files_info.keys():
-            num_events_catalog[run_number] = sum(files_info[run_number].values())
+            self.logger.debug("  for run #%d:" % run_number)
+            num_events_catalog[run_number] = {}
+            num_events_catalog[run_number]["all_sites"] = sum([i[0] for i in files_info[run_number].values()])
+            self.logger.debug("    at all sites combined there are %d events" % \
+                              num_events_catalog[run_number]["all_sites"])
+            site_names = list(set([j for i in files_info[run_number].values() for j in i[1]]))
+            for site_name in site_names:
+                num_events_catalog[run_number][site_name] = sum([i[0] for i in files_info[run_number].values() if site_name in i[1]])
+                self.logger.debug("    at site `%s' there are %d events" % \
+                                  (site_name, num_events_catalog[run_number][site_name]))
 
-        # End of dbs_check_dataset_num_events.
+            mirrored = False
+            if len(site_names) > 1:
+                # Now we somehow need to figure out if we're dealing
+                # with a mirrored or a spread-out dataset. The rule we
+                # use here is that we're dealing with a spread-out
+                # dataset unless all sites contain exactly the same
+                # list of files. In other words: if for each of the
+                # files in this run the list of sites is the same.
+                mirrored = True
+                site_names_ref = set(files_info[run_number].values()[0][1])
+                for site_names_tmp in files_info[run_number].values()[1:]:
+                    if set(site_names_tmp[1]) != site_names_ref:
+                        mirrored = False
+                        break
+                if mirrored:
+                    self.logger.debug("    -> run appears to be mirrored")
+                else:
+                    self.logger.debug("    -> run appears to be spread-out")
+
+            num_events_catalog[run_number]["mirrored"] = mirrored
+
+        # End of dbs_check_dataset_spread.
         return num_events_catalog
+
+    # Beginning of old version.
+##    def dbs_check_dataset_num_events(self, dataset_name):
+##        """Figure out the number of events in each run of this dataset.
+
+##        This is a more efficient way of doing this than calling
+##        dbs_resolve_number_of_events for each run.
+
+##        # BUG BUG BUG
+##        # This might very well not work at all for spread-out samples. (?)
+##        # BUG BUG BUG end
+
+##        """
+
+##        # DEBUG DEBUG DEBUG
+##        # If we get here DBS should have been set up already.
+##        assert not self.dbs_api is None
+##        # DEBUG DEBUG DEBUG end
+
+##        api = self.dbs_api
+##        dbs_query = "find run.number, file.name, file.numevents where dataset = %s " \
+##                    "and dataset.status = VALID" % \
+##                    dataset_name
+##        try:
+##            api_result = api.executeQuery(dbs_query)
+##        except DbsApiException:
+##            msg = "ERROR: Could not execute DBS query"
+##            self.logger.fatal(msg)
+##            raise Error(msg)
+
+##        try:
+##            files_info = {}
+##            class Handler(xml.sax.handler.ContentHandler):
+##                def startElement(self, name, attrs):
+##                    if name == "result":
+##                        run_number = int(attrs["RUNS_RUNNUMBER"])
+##                        file_name = str(attrs["FILES_LOGICALFILENAME"])
+##                        nevents = int(attrs["FILES_NUMBEROFEVENTS"])
+##                        try:
+##                            files_info[run_number][file_name] = nevents
+##                        except KeyError:
+##                            files_info[run_number] = {file_name: nevents}
+##            xml.sax.parseString(api_result, Handler())
+##        except SAXParseException:
+##            msg = "ERROR: Could not parse DBS server output"
+##            self.logger.fatal(msg)
+##            raise Error(msg)
+
+##        num_events_catalog = {}
+##        for run_number in files_info.keys():
+##            num_events_catalog[run_number] = sum(files_info[run_number].values())
+
+##        # End of dbs_check_dataset_num_events.
+##        return num_events_catalog
+    # End of old version.
 
     ##########
 
@@ -2133,8 +2369,16 @@ class CMSHarvester(object):
             if dataset_name in self.book_keeping_information.keys():
                 for run in runs:
                     if run in self.book_keeping_information[dataset_name]:
-                        dataset_names_filtered[dataset_name].remove(run)
-                        nruns_removed = nruns_removed + 1
+                        # Don't forget to check event counts. It could
+                        # be that since we processed this run more
+                        # events have become available.
+                        num_events_processed = self.book_keeping_information \
+                                               [dataset_name][run]
+                        num_events_now = self.datasets_information \
+                                         [dataset_name]["num_events"][run]
+                        if num_events_processed >= num_events_now:
+                            dataset_names_filtered[dataset_name].remove(run)
+                            nruns_removed = nruns_removed + 1
                 # Clean out empty datasets (just in case we removed
                 # all runs).
                 if len(dataset_names_filtered[dataset_name]) < 1:
@@ -2152,6 +2396,31 @@ class CMSHarvester(object):
                           len(self.datasets_to_use))
 
         # End of process_book_keeping.
+
+    ##########
+
+    def singlify_datasets(self):
+        """Remove all but the largest part of all datasets.
+
+        This allows us to harvest at least part of these datasets
+        using single-step harvesting until the two-step approach
+        works.
+
+        """
+
+        # DEBUG DEBUG DEBUG
+        assert self.harvesting_mode == "single-step-allow-partial"
+        # DEBUG DEBUG DEBUG end
+
+        for dataset_name in self.datasets_to_use:
+            for run_number in self.datasets_information[dataset_name]["runs"]:
+                max_events = max(self.datasets_information[dataset_name]["sites"][run_number].values())
+                sites_with_max_events = [i[0] for i in self.datasets_information[dataset_name]["sites"][run_number].items() if i[1] == max_events]
+                selected_site = self.pick_a_site(sites_with_max_events)
+                self.datasets_information[dataset_name]["sites"][run_number] = {selected_site: max_events}
+                #self.datasets_information[dataset_name]["sites"][run_number] = [selected_site]
+
+        # End of singlify_datasets.
 
     ##########
 
@@ -2203,39 +2472,6 @@ class CMSHarvester(object):
                     self.logger.warning("%s " \
                                         "--> skipping" % msg)
                     continue
-
-            ###
-
-            # Require that the dataset/run is non-empty.
-            # NOTE: To avoid reconsidering empty runs/datasets next
-            # time around, we do include them in the book keeping.
-            num_events_dataset = sum(self.datasets_information[dataset_name]["num_events"].values())
-            if num_events_dataset < 1:
-                msg = "  dataset `%s' is empty"
-                del dataset_names_after_checks[dataset_name]
-                self.logger.warning("%s " \
-                                    "--> skipping" % msg)
-                # Update the book keeping.
-                # DEBUG DEBUG DEBUG
-                assert not self.book_keeping_information.has_key(dataset_name)
-                # DEBUG DEBUG DEBUG end
-                self.book_keeping_information[dataset_name] = self.datasets_information \
-                                                              [dataset_name]["num_events"].keys()
-                continue
-            empty_runs = [i for (i, j) in \
-                          self.datasets_information[dataset_name]\
-                          ["num_events"].items() if j < 1]
-            if len(empty_runs) > 0:
-                self.logger.info("  removed %d empty runs from dataset `%s'" % \
-                                 (len(empty_runs), dataset_name))
-                for empty_run in empty_runs:
-                    dataset_names_after_checks[dataset_name].remove(empty_run)
-
-                    # Update the book keeping (for single runs this time).
-                    # DEBUG DEBUG DEBUG
-                    assert not self.book_keeping_information.has_key(dataset_name)
-                    # DEBUG DEBUG DEBUG end
-                    self.book_keeping_information[dataset_name] = empty_runs
 
             ###
 
@@ -2297,14 +2533,27 @@ class CMSHarvester(object):
 
             ###
 
-            # If we're running single-step harvesting: only allow
+            # Unless we're running two-step harvesting: only allow
             # samples located on a single site.
-            if self.harvesting_mode == "single-step":
-                for run_number in self.datasets_information[dataset_name] \
-                        ["runs"]:
+            if not self.harvesting_mode == "two-step":
+                for run_number in self.datasets_to_use[dataset_name]:
+                    # TODO TODO TODO
+                    # This is not really a nice solution but since it
+                    # could be that we've already removed this run in
+                    # one of the above checks we have to check here.
+                    if not run_number in dataset_names_after_checks \
+                       [dataset_name]:
+                        continue
+                    # TODO TODO TODO end
+                    # DEBUG DEBUG DEBUG
+##                    if self.datasets_information[dataset_name]["num_events"][run_number] != 0:
+##                        pdb.set_trace()
+                    # DEBUG DEBUG DEBUG end
                     num_sites = len(self.datasets_information[dataset_name] \
                                 ["sites"][run_number])
-                    if num_sites > 1:
+                    if num_sites > 1 and \
+                           not self.datasets_information[dataset_name] \
+                           ["mirrored"][run_number]:
                         # Cannot do this with a single-step job, not
                         # even in force mode. It just does not make
                         # sense.
@@ -2316,6 +2565,50 @@ class CMSHarvester(object):
                         dataset_names_after_checks[dataset_name].remove(run_number)
                         self.logger.warning("%s " \
                                             "--> skipping" % msg)
+
+            ###
+
+            # Require that the dataset/run is non-empty.
+            # NOTE: To avoid reconsidering empty runs/datasets next
+            # time around, we do include them in the book keeping.
+            # BUG BUG BUG
+            # This should sum only over the runs that we use!
+            tmp = [j for (i, j) in self.datasets_information \
+                   [dataset_name]["num_events"].items() \
+                   if i in self.datasets_to_use[dataset_name]]
+            num_events_dataset = sum(tmp)
+            # BUG BUG BUG end
+            if num_events_dataset < 1:
+                msg = "  dataset `%s' is empty" % dataset_name
+                del dataset_names_after_checks[dataset_name]
+                self.logger.warning("%s " \
+                                    "--> skipping" % msg)
+                # Update the book keeping with all the runs in the dataset.
+                # DEBUG DEBUG DEBUG
+                assert set([i for i in self.datasets_information \
+                            [dataset_name]["num_events"].values() \
+                            if i in self.datasets_to_use[dataset_name]]) == \
+                            set([0])
+                # DEBUG DEBUG DEBUG end
+                self.book_keeping_information[dataset_name] = self.datasets_information \
+                                                              [dataset_name]["num_events"]
+                continue
+            tmp = [i for i in \
+                   self.datasets_information[dataset_name] \
+                   ["num_events"].items() if i[1] < 1]
+            tmp = [i for i in tmp if i in self.datasets_to_use[dataset_name]]
+            empty_runs = dict(tmp)
+            if len(empty_runs) > 0:
+                for empty_run in empty_runs:
+                    dataset_names_after_checks[dataset_name].remove(empty_run)
+                self.logger.info("  removed %d empty runs from dataset `%s'" % \
+                                 (len(empty_runs), dataset_name))
+
+                # Update the book keeping (for single runs this time).
+                # DEBUG DEBUG DEBUG
+                assert not self.book_keeping_information.has_key(dataset_name)
+                # DEBUG DEBUG DEBUG end
+                self.book_keeping_information[dataset_name] = empty_runs
 
         ###
 
@@ -2374,10 +2667,12 @@ class CMSHarvester(object):
 
         if self.harvesting_mode == "single-step":
             config_file_name = self.create_harvesting_config_file_name(dataset_name)
+        elif self.harvesting_mode == "single-step-allow-partial":
+            config_file_name = self.create_harvesting_config_file_name(dataset_name)
+            config_file_name = config_file_name.replace(".py", "_partial.py")
         elif self.harvesting_mode == "two-step":
             config_file_name = self.create_me_summary_config_file_name(dataset_name)
         else:
-            # But that's impossible.
             assert False, "ERROR Unknown harvesting mode `%s'" % \
                    self.harvesting_mode
 
@@ -2439,6 +2734,11 @@ class CMSHarvester(object):
             assert not run_number is None
             # DEBUG DEBUG DEBUG end
             output_file_name = self.create_harvesting_output_file_name(dataset_name, run_number)
+        elif self.harvesting_mode == "single-step-allow-partial":
+            # DEBUG DEBUG DEBUG
+            assert not run_number is None
+            # DEBUG DEBUG DEBUG end
+            output_file_name = self.create_harvesting_output_file_name(dataset_name, run_number)
         elif self.harvesting_mode == "two-step":
             # DEBUG DEBUG DEBUG
             assert run_number is None
@@ -2473,6 +2773,9 @@ class CMSHarvester(object):
         # here, so let's hope it does not change too often.
         output_file_name = "DQM_V0001_R%09d__%s.root" % \
                            (run_number, dataset_name_escaped)
+        if self.harvesting_mode.find("partial") > -1:
+            output_file_name = output_file_name.replace(".root", \
+                                                        "_partial.root")
 
         # End of create_harvesting_output_file_name.
         return output_file_name
@@ -2562,7 +2865,7 @@ class CMSHarvester(object):
         tmp.append("total_number_of_events = -1")
         tmp.append("number_of_jobs = 1")
 
-        if self.harvesting_mode == "single-step":
+        if self.harvesting_mode.find("single-step") > -1:
             tmp.append("# Force everything to run in one job.")
             tmp.append("no_block_boundary = 1")
 
@@ -2612,12 +2915,20 @@ class CMSHarvester(object):
                 # We should only get here if we're treating a
                 # dataset/run that is fully contained at a single
                 # site.
-                assert len(self.datasets_information[dataset_name] \
-                           ["sites"][run]) == 1
+                assert (len(self.datasets_information[dataset_name] \
+                            ["sites"][run]) == 1) or \
+                            self.datasets_information[dataset_name]["mirrored"]
                 # DEBUG DEBUG DEBUG end
 
-                site_name = self.datasets_information[dataset_name]["sites"] \
-                          [run][0][0]
+                site_names = self.datasets_information[dataset_name] \
+                             ["sites"][run].keys()
+                # If we're looking at a mirrored dataset we just pick
+                # one of the sites. Otherwise there is nothing to
+                # choose.
+                if len(site_names) > 1:
+                    site_name = self.pick_a_site(site_names)
+                else:
+                    site_name = site_names[0]
                 nevents = self.datasets_information[dataset_name]["num_events"][run]
 
                 # The block name.
@@ -2683,15 +2994,6 @@ class CMSHarvester(object):
 
         """
 
-        # BUG BUG BUG
-        # First of all let's try and get this to work...
-        import Configuration.PyReleaseValidation
-        from Configuration.PyReleaseValidation.ConfigBuilder \
-             import ConfigBuilder, defaultOptions
-        # from Configuration.PyReleaseValidation.cmsDriverOptions import options, python_config_filename
-
-        ###
-
         # Setup some options needed by the ConfigBuilder.
         config_options = defaultOptions
 
@@ -2738,7 +3040,12 @@ class CMSHarvester(object):
 
         ###
 
-        config_builder = ConfigBuilder(config_options, with_input=True)
+        if "with_input" in getargspec(ConfigBuilder.__init__)[0]:
+            # This is the case for 3.3.X.
+            config_builder = ConfigBuilder(config_options, with_input=True)
+        else:
+            # This is the case in older CMSSW versions.
+            config_builder = ConfigBuilder(config_options)
         config_builder.prepare(True)
         config_contents = config_builder.pythonCfgCode
 
@@ -2817,11 +3124,6 @@ class CMSHarvester(object):
 ##            customisations.append("")
 
         # BUG BUG BUG end
-
-        # TODO TODO TODO
-        # This specifies which reference histograms to use.
-        # We still need to figure this out.
-        # TODO TODO TODO end
 
         config_contents = config_contents + "\n".join(customisations)
 
@@ -3096,8 +3398,10 @@ class CMSHarvester(object):
                     continue
                 if not line.startswith("#"):
                     tmp = eval(line, {"__builtins__": {}})
-                    if type(tmp) == type(self.book_keeping_information):
-                        self.book_keeping_information.update(tmp)
+                    # DEBUG DEBUG DEBUG
+                    assert type(tmp) == type(self.book_keeping_information)
+                    # DEBUG DEBUG DEBUG end
+                    self.book_keeping_information.update(tmp)
             in_file.close()
         except IOError, err:
             # No big deal if the file does not exist. Halt for more
@@ -3157,11 +3461,12 @@ class CMSHarvester(object):
 
         contents_lines = []
         contents_lines.append("# %s" % self.time_stamp())
-        contents_lines.append("# %s" % self.ident_string())
+        contents_lines.append("# Created by %s" % self.ident_string())
         contents_lines.append("")
         contents_lines.append("# Format: Python dictionary with")
         contents_lines.append("# dataset name as key,")
-        contents_lines.append("# list of processed runs as value.")
+        contents_lines.append("# dict of processed runs into number of")
+        contents_lines.append("# processed events as value.")
         contents_lines.append("# Everything present in the dictionary")
         contents_lines.append("# has been processed by cmsHarvester.")
         contents_lines.append("# Admittedly this only means that the")
@@ -3257,11 +3562,34 @@ class CMSHarvester(object):
                        "ERROR Empty GlobalTag for MC dataset!!!"
             # DEBUG DEBUG DEBUG end
 
-            num_events_catalog = self.dbs_check_dataset_num_events(dataset_name)
+            # DEBUG DEBUG DEBUG
+            #tmp = self.dbs_check_dataset_spread_old(dataset_name)
+            # DEBUG DEBUG DEBUG end
+            sites_catalog = self.dbs_check_dataset_spread(dataset_name)
+
+            # Extract the total event counts.
+            num_events = {}
+            for run_number in sites_catalog.keys():
+                num_events[run_number] = sites_catalog \
+                                         [run_number]["all_sites"]
+                del sites_catalog[run_number]["all_sites"]
+
+            # Extract the information about whether or not datasets
+            # are mirrored.
+            mirror_catalog = {}
+            for run_number in sites_catalog.keys():
+                mirror_catalog[run_number] = sites_catalog \
+                                             [run_number]["mirrored"]
+                del sites_catalog[run_number]["mirrored"]
 
             # BUG BUG BUG
+            # I think I could now get rid of that and just fill the
+            # "sites" entry with the `inverse' of this
+            # num_events_catalog(?).
             #num_sites = self.dbs_resolve_dataset_number_of_sites(dataset_name)
-            sites_catalog = self.dbs_check_dataset_spread(dataset_name)
+            #sites_catalog = self.dbs_check_dataset_spread(dataset_name)
+            #sites_catalog = dict(zip(num_events_catalog.keys(),
+            #                         [[j for i in num_events_catalog.values() for j in i.keys()]]))
             # BUG BUG BUG end
 
 ##            # DEBUG DEBUG DEBUG
@@ -3287,7 +3615,8 @@ class CMSHarvester(object):
                                                                      cmssw_version
             self.datasets_information[dataset_name]["globaltag"] = globaltag
             self.datasets_information[dataset_name]["datatype"] = datatype
-            self.datasets_information[dataset_name]["num_events"] = num_events_catalog
+            self.datasets_information[dataset_name]["num_events"] = num_events
+            self.datasets_information[dataset_name]["mirrored"] = mirror_catalog
             self.datasets_information[dataset_name]["sites"] = sites_catalog
 
             # In principle each run of each dataset should have a
@@ -3306,7 +3635,7 @@ class CMSHarvester(object):
                                                                    castor_paths
             # TODO TODO TODO end
 
-        # End of build_datasets_info.
+        # End of build_datasets_information.
 
     ##########
 
@@ -3408,6 +3737,12 @@ class CMSHarvester(object):
                 # done according to the book keeping.
                 self.process_book_keeping()
 
+                # If we've been asked to sacrifice some parts of
+                # spread-out samples in order to be able to partially
+                # harvest them, we'll do that here.
+                if self.harvesting_mode == "single-step-allow-partial":
+                    self.singlify_datasets()
+
                 # Check dataset name(s)
                 self.check_dataset_list()
                 # and see if there is anything left to do.
@@ -3471,8 +3806,13 @@ class CMSHarvester(object):
                             # Doh! Just re-raise the damn thing.
                             raise
                         else:
-                            self.book_keeping_information[dataset_name] = \
-                                                                        self.datasets_information[dataset_name]["runs"]
+                            tmp = self.datasets_information[dataset_name] \
+                                  ["num_events"]
+                            if self.book_keeping_information. \
+                                   has_key(dataset_name):
+                                self.book_keeping_information[dataset_name].extend(tmp)
+                            else:
+                                self.book_keeping_information[dataset_name] = tmp
 
                     # Explain the user what to do now.
                     self.show_exit_message()
@@ -3509,8 +3849,10 @@ class CMSHarvester(object):
                     self.logger.fatal("!" * 50)
                     self.logger.fatal(str(err))
                     import traceback
-                    traceback.print_exc()
-                    print "!" * 50
+                    traceback_string = traceback.format_exc()
+                    for line in traceback_string.split("\n"):
+                        self.logger.fatal(line)
+                    self.logger.fatal("!" * 50)
                     exit_code = 2
 
         # This is the stuff that we should really do, no matter
