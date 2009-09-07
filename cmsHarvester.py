@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20090904
+## Last change: 20090907
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.3.3"
+__version__ = "1.3.4"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -767,8 +767,7 @@ class CMSHarvester(object):
         release_version = self.datasets_information \
                           [dataset_name]["cmssw_version"]
         release_version = release_version.lower(). \
-                          replace("cmssw", ""). \
-                          replace("_", "")
+                          replace("cmssw", "")
         castor_path = os.path.join(castor_path, release_version)
 
         # The dataset name.
