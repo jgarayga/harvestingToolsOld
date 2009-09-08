@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20090907
+## Last change: 20090908
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.3.5"
+__version__ = "1.3.6"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -2626,7 +2626,7 @@ class CMSHarvester(object):
             tmp = [i for i in \
                    self.datasets_information[dataset_name] \
                    ["num_events"].items() if i[1] < 1]
-            tmp = [i for i in tmp if i in self.datasets_to_use[dataset_name]]
+            tmp = [i for i in tmp if i[0] in self.datasets_to_use[dataset_name]]
             empty_runs = dict(tmp)
             if len(empty_runs) > 0:
                 for empty_run in empty_runs:
