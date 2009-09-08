@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.3.6"
+__version__ = "1.3.7"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -3845,7 +3845,7 @@ class CMSHarvester(object):
                                   ["num_events"]
                             if self.book_keeping_information. \
                                    has_key(dataset_name):
-                                self.book_keeping_information[dataset_name].extend(tmp)
+                                self.book_keeping_information[dataset_name].update(tmp)
                             else:
                                 self.book_keeping_information[dataset_name] = tmp
 
