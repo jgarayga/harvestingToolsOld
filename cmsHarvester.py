@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20090908
+## Last change: 20090909
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.3.7"
+__version__ = "1.3.8"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1225,7 +1225,9 @@ class CMSHarvester(object):
         # NOTE: Only output to CASTOR is supported for the moment,
         # since the central DQM results place is on CASTOR anyway.
         parser.add_option("", "--castordir",
-                          help="Place on CASTOR to store results",
+                          help="Place on CASTOR to store results. " \
+                          "Default is `%s'." % \
+                          self.castor_base_dir_default,
                           action="callback",
                           callback=self.option_handler_castor_dir,
                           type="string",
