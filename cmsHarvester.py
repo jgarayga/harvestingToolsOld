@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.3.8"
+__version__ = "1.3.9"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1225,9 +1225,7 @@ class CMSHarvester(object):
         # NOTE: Only output to CASTOR is supported for the moment,
         # since the central DQM results place is on CASTOR anyway.
         parser.add_option("", "--castordir",
-                          help="Place on CASTOR to store results. " \
-                          "Default is `%s'." % \
-                          self.castor_base_dir_default,
+                          help="Place on CASTOR to store results",
                           action="callback",
                           callback=self.option_handler_castor_dir,
                           type="string",
@@ -2094,8 +2092,21 @@ class CMSHarvester(object):
             class Handler(xml.sax.handler.ContentHandler):
                 def startElement(self, name, attrs):
                     if name == "result":
-                        run_number = int(attrs["RUNS_RUNNUMBER"])
                         site_name = str(attrs["STORAGEELEMENT_SENAME"])
+                        # TODO TODO TODO
+                        # Ugly hack to get around cases like this:
+                        #   $ dbs search --query="find dataset, site, file.count where dataset=/RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO"
+                        #   Using DBS instance at: http://cmsdbsprod.cern.ch/cms_dbs_prod_global/servlet/DBSServlet
+                        #   Processing ... \
+                        #   PATH    STORAGEELEMENT_SENAME   COUNT_FILES
+                        #   _________________________________________________________________________________
+                        #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO          1
+                        #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO  cmssrm.fnal.gov 12
+                        #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO  srm-cms.cern.ch 12
+                        if len(site_name) < 1:
+                            return
+                        # TODO TODO TODO end
+                        run_number = int(attrs["RUNS_RUNNUMBER"])
                         file_name = str(attrs["FILES_LOGICALFILENAME"])
                         nevents = int(attrs["FILES_NUMBEROFEVENTS"])
                         # I know, this is a bit of a kludge.
@@ -2122,19 +2133,38 @@ class CMSHarvester(object):
             self.logger.fatal(msg)
             raise Error(msg)
 
+        # Remove any information (except for the run number itself)
+        # for runs that are not available anywhere.
+        # NOTE: After introducing the ugly hack above, this is a bit
+        # redundant, but let's keep it for the moment.
+        for run_number in files_info.keys():
+            files_without_sites = [i for (i, j) in \
+                                   files_info[run_number].items() \
+                                   if "" in j[1]]
+            if len(files_without_sites) > 0:
+                for file_name in files_without_sites:
+                    files_info[run_number][file_name] = (files_info \
+                                                         [run_number] \
+                                                         [file_name][0], [])
+
         # And another bit of a kludge.
         num_events_catalog = {}
         for run_number in files_info.keys():
             self.logger.debug("  for run #%d:" % run_number)
             num_events_catalog[run_number] = {}
             num_events_catalog[run_number]["all_sites"] = sum([i[0] for i in files_info[run_number].values()])
-            self.logger.debug("    at all sites combined there are %d events" % \
-                              num_events_catalog[run_number]["all_sites"])
             site_names = list(set([j for i in files_info[run_number].values() for j in i[1]]))
-            for site_name in site_names:
-                num_events_catalog[run_number][site_name] = sum([i[0] for i in files_info[run_number].values() if site_name in i[1]])
-                self.logger.debug("    at site `%s' there are %d events" % \
-                                  (site_name, num_events_catalog[run_number][site_name]))
+            if len(site_names) < 1:
+                self.logger.debug("    run is not available at any site")
+                self.logger.debug("      (but should contain %d events" % \
+                                  num_events_catalog[run_number]["all_sites"])
+            else:
+                self.logger.debug("    at all sites combined there are %d events" % \
+                                  num_events_catalog[run_number]["all_sites"])
+                for site_name in site_names:
+                    num_events_catalog[run_number][site_name] = sum([i[0] for i in files_info[run_number].values() if site_name in i[1]])
+                    self.logger.debug("    at site `%s' there are %d events" % \
+                                      (site_name, num_events_catalog[run_number][site_name]))
 
             mirrored = False
             if len(site_names) > 1:
@@ -2477,6 +2507,7 @@ class CMSHarvester(object):
           from inadvertently running RelVal for data.
         - It is not possible to run single-step harvesting jobs on
           samples that are not fully contained at a single site.
+        - Each dataset/run has to be available at at least one site.
 
         """
 
@@ -2565,18 +2596,31 @@ class CMSHarvester(object):
 
             ###
 
+            # Require that each run is available at least somewhere.
+            runs_without_sites = [i for (i, j) in \
+                                  self.datasets_information[dataset_name] \
+                                  ["sites"].items() \
+                                  if len(j) < 1 and \
+                                  i in self.datasets_to_use[dataset_name]]
+            if len(runs_without_sites) > 0:
+                for run_without_sites in runs_without_sites:
+                    try:
+                        dataset_names_after_checks[dataset_name].remove(run_without_sites)
+                    except KeyError:
+                        pass
+                self.logger.warning("  removed %d unavailable runs " \
+                                    "from dataset `%s'" % \
+                                    (len(runs_without_sites), dataset_name))
+                self.logger.debug("    (%s)" % \
+                                  ", ".join([str(i) for i in \
+                                             runs_without_sites]))
+
+            ###
+
             # Unless we're running two-step harvesting: only allow
             # samples located on a single site.
             if not self.harvesting_mode == "two-step":
                 for run_number in self.datasets_to_use[dataset_name]:
-                    # TODO TODO TODO
-                    # This is not really a nice solution but since it
-                    # could be that we've already removed this run in
-                    # one of the above checks we have to check here.
-                    if not run_number in dataset_names_after_checks \
-                       [dataset_name]:
-                        continue
-                    # TODO TODO TODO end
                     # DEBUG DEBUG DEBUG
 ##                    if self.datasets_information[dataset_name]["num_events"][run_number] != 0:
 ##                        pdb.set_trace()
@@ -2594,7 +2638,10 @@ class CMSHarvester(object):
                               "  Cannot run single-step harvesting on " \
                               "samples spread across multiple sites" % \
                               (dataset_name, run_number)
-                        dataset_names_after_checks[dataset_name].remove(run_number)
+                        try:
+                            dataset_names_after_checks[dataset_name].remove(run_number)
+                        except KeyError:
+                            pass
                         self.logger.warning("%s " \
                                             "--> skipping" % msg)
 
@@ -2617,8 +2664,8 @@ class CMSHarvester(object):
                                     "--> skipping" % msg)
                 # Update the book keeping with all the runs in the dataset.
                 # DEBUG DEBUG DEBUG
-                assert set([i for i in self.datasets_information \
-                            [dataset_name]["num_events"].values() \
+                assert set([j for (i, j) in self.datasets_information \
+                            [dataset_name]["num_events"].items() \
                             if i in self.datasets_to_use[dataset_name]]) == \
                             set([0])
                 # DEBUG DEBUG DEBUG end
@@ -2632,9 +2679,14 @@ class CMSHarvester(object):
             empty_runs = dict(tmp)
             if len(empty_runs) > 0:
                 for empty_run in empty_runs:
-                    dataset_names_after_checks[dataset_name].remove(empty_run)
+                    try:
+                        dataset_names_after_checks[dataset_name].remove(empty_run)
+                    except KeyError:
+                        pass
                 self.logger.info("  removed %d empty runs from dataset `%s'" % \
                                  (len(empty_runs), dataset_name))
+                self.logger.debug("    (%s)" % \
+                                  ", ".join([str(i) for i in empty_runs]))
 
                 # Update the book keeping (for single runs this time).
                 # DEBUG DEBUG DEBUG
@@ -2649,17 +2701,17 @@ class CMSHarvester(object):
         dataset_names_after_checks_tmp = copy.deepcopy(dataset_names_after_checks)
         for (dataset_name, runs) in dataset_names_after_checks.iteritems():
             if len(runs) < 1:
-                self.logger.info("  Removing dataset without any runs " \
-                                 "(left) `%s'" % \
-                                 dataset_name)
+                self.logger.warning("  Removing dataset without any runs " \
+                                    "(left) `%s'" % \
+                                    dataset_name)
                 del dataset_names_after_checks_tmp[dataset_name]
         dataset_names_after_checks = dataset_names_after_checks_tmp
 
         ###
 
-        self.logger.info("  --> Removed %d datasets" % \
-                         (len(self.datasets_to_use) -
-                          len(dataset_names_after_checks)))
+        self.logger.warning("  --> Removed %d datasets" % \
+                            (len(self.datasets_to_use) -
+                             len(dataset_names_after_checks)))
 
         # Now store the modified version of the dataset list.
         self.datasets_to_use = dataset_names_after_checks
@@ -3847,7 +3899,7 @@ class CMSHarvester(object):
                                   ["num_events"]
                             if self.book_keeping_information. \
                                    has_key(dataset_name):
-                                self.book_keeping_information[dataset_name].update(tmp)
+                                self.book_keeping_information[dataset_name].extend(tmp)
                             else:
                                 self.book_keeping_information[dataset_name] = tmp
 
