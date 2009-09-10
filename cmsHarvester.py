@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20090909
+## Last change: 20090910
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.3.9"
+__version__ = "1.3.10"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -2105,6 +2105,7 @@ class CMSHarvester(object):
                         #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO  srm-cms.cern.ch 12
                         if len(site_name) < 1:
                             return
+
                         # TODO TODO TODO end
                         run_number = int(attrs["RUNS_RUNNUMBER"])
                         file_name = str(attrs["FILES_LOGICALFILENAME"])
@@ -3899,7 +3900,7 @@ class CMSHarvester(object):
                                   ["num_events"]
                             if self.book_keeping_information. \
                                    has_key(dataset_name):
-                                self.book_keeping_information[dataset_name].extend(tmp)
+                                self.book_keeping_information[dataset_name].update(tmp)
                             else:
                                 self.book_keeping_information[dataset_name] = tmp
 
