@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -839,7 +839,6 @@ class CMSHarvester(object):
                       " created it !!!" % castor_dir
                 self.logger.fatal(msg)
                 raise Error(msg)
-            pdb.set_trace()
             if len(output) > 0:
                 self.logger.warning("Output directory `%s' is not empty:" \
                                     " new jobs will fail to" \
@@ -2133,7 +2132,6 @@ class CMSHarvester(object):
                         #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO  srm-cms.cern.ch 12
                         if len(site_name) < 1:
                             return
-
                         # TODO TODO TODO end
                         run_number = int(attrs["RUNS_RUNNUMBER"])
                         file_name = str(attrs["FILES_LOGICALFILENAME"])
@@ -2162,27 +2160,86 @@ class CMSHarvester(object):
             self.logger.fatal(msg)
             raise Error(msg)
 
-        # Remove any information (except for the run number itself)
-        # for runs that are not available anywhere.
-        # NOTE: After introducing the ugly hack above, this is a bit
-        # redundant, but let's keep it for the moment.
+        # Remove any information for files that are not available
+        # anywhere. NOTE: After introducing the ugly hack above, this
+        # is a bit redundant, but let's keep it for the moment.
         for run_number in files_info.keys():
             files_without_sites = [i for (i, j) in \
                                    files_info[run_number].items() \
-                                   if "" in j[1]]
+                                   if len(j[1]) < 1]
             if len(files_without_sites) > 0:
+                self.logger.warning("Removing %d file(s)" \
+                                    " with empty site names" % \
+                                    len(files_without_sites))
                 for file_name in files_without_sites:
-                    files_info[run_number][file_name] = (files_info \
-                                                         [run_number] \
-                                                         [file_name][0], [])
+                    del files_info[run_number][file_name]
+                    # files_info[run_number][file_name] = (files_info \
+                    #                                     [run_number] \
+                    #                                      [file_name][0], [])
 
         # And another bit of a kludge.
         num_events_catalog = {}
         for run_number in files_info.keys():
+            site_names = list(set([j for i in files_info[run_number].values() for j in i[1]]))
+
+            # NOTE: The term `mirrored' does not have the usual
+            # meaning here. It basically means that we can apply
+            # single-step harvesting.
+            mirrored = None
+            if len(site_names) > 1:
+                # Now we somehow need to figure out if we're dealing
+                # with a mirrored or a spread-out dataset. The rule we
+                # use here is that we're dealing with a spread-out
+                # dataset unless we can find at least one site
+                # containing exactly the full list of files for this
+                # dataset that DBS knows about. In that case we just
+                # use only that site.
+                all_file_names = files_info[run_number].keys()
+                all_file_names = set(all_file_names)
+                sites_with_complete_copies = []
+                for site_name in site_names:
+                    files_at_site = [i for (i, (j, k)) \
+                                     in files_info[run_number].items() \
+                                     if site_name in k]
+                    files_at_site = set(files_at_site)
+                    if files_at_site == all_file_names:
+                        sites_with_complete_copies.append(site_name)
+                if len(sites_with_complete_copies) < 1:
+                    # This dataset/run is available at more than one
+                    # site, but no one has a complete copy.
+                    mirrored = False
+                else:
+                    # This dataset/run is available at more than one
+                    # site and at least one of them has a complete
+                    # copy. Even if this is only a single site, let's
+                    # call this `mirrored' and run the single-step
+                    # harvesting.
+                    mirrored = True
+
+##                site_names_ref = set(files_info[run_number].values()[0][1])
+##                for site_names_tmp in files_info[run_number].values()[1:]:
+##                    if set(site_names_tmp[1]) != site_names_ref:
+##                        mirrored = False
+##                        break
+
+                if mirrored:
+                    self.logger.debug("    -> run appears to be `mirrored'")
+                else:
+                    self.logger.debug("    -> run appears to be spread-out")
+
+                if mirrored and \
+                       len(sites_with_complete_copies) != len(site_names):
+                    # Remove any references to incomplete sites if we
+                    # have at least one complete site (and if there
+                    # are incomplete sites).
+                    for (file_name, (i, sites)) in files_info[run_number].items():
+                        complete_sites = [site for site in sites \
+                                          if site in sites_with_complete_copies]
+                        files_info[run_number][file_name] = (i, complete_sites)
+
             self.logger.debug("  for run #%d:" % run_number)
             num_events_catalog[run_number] = {}
             num_events_catalog[run_number]["all_sites"] = sum([i[0] for i in files_info[run_number].values()])
-            site_names = list(set([j for i in files_info[run_number].values() for j in i[1]]))
             if len(site_names) < 1:
                 self.logger.debug("    run is not available at any site")
                 self.logger.debug("      (but should contain %d events" % \
@@ -2194,26 +2251,6 @@ class CMSHarvester(object):
                     num_events_catalog[run_number][site_name] = sum([i[0] for i in files_info[run_number].values() if site_name in i[1]])
                     self.logger.debug("    at site `%s' there are %d events" % \
                                       (site_name, num_events_catalog[run_number][site_name]))
-
-            mirrored = False
-            if len(site_names) > 1:
-                # Now we somehow need to figure out if we're dealing
-                # with a mirrored or a spread-out dataset. The rule we
-                # use here is that we're dealing with a spread-out
-                # dataset unless all sites contain exactly the same
-                # list of files. In other words: if for each of the
-                # files in this run the list of sites is the same.
-                mirrored = True
-                site_names_ref = set(files_info[run_number].values()[0][1])
-                for site_names_tmp in files_info[run_number].values()[1:]:
-                    if set(site_names_tmp[1]) != site_names_ref:
-                        mirrored = False
-                        break
-                if mirrored:
-                    self.logger.debug("    -> run appears to be mirrored")
-                else:
-                    self.logger.debug("    -> run appears to be spread-out")
-
             num_events_catalog[run_number]["mirrored"] = mirrored
 
         # End of dbs_check_dataset_spread.
