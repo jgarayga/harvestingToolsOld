@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.4.1"
+__version__ = "1.5.0"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -735,17 +735,16 @@ class CMSHarvester(object):
 
     ##########
 
-    def create_castor_path_name(self, dataset_name):
-        """Build the output path to be used on CASTOR.
+    def create_castor_path_name_common(self, dataset_name):
+        """Build the common part of the output path to be used on
+        CASTOR.
 
         This consists of the CASTOR area base path specified by the
-        user and a piece depending on the data type (data vs. MC) and
-        the harvesting type.
-
-        # NOTE: It's not possible to create different kinds of
-        # harvesting jobs in a single call to this tool. However, in
-        # principle it could be possible to create both data and MC
-        # jobs in a single go.
+        user and a piece depending on the data type (data vs. MC), the
+        harvesting type and the dataset name followed by a piece
+        containing the run number and event count. (See comments in
+        create_castor_path_name_special for details.) This method
+        creates the common part, without run number and event count.
 
         """
 
@@ -785,7 +784,49 @@ class CMSHarvester(object):
 
         castor_path = os.path.normpath(castor_path)
 
-        # End of create_castor_path_name.
+        # End of create_castor_path_name_common.
+        return castor_path
+
+    ##########
+
+    def create_castor_path_name_special(self,
+                                        dataset_name, run_number,
+                                        castor_path_common):
+        """Create the specialised part of the CASTOR output dir name.
+
+        NOTE: To avoid clashes with `incremental harvesting'
+        (re-harvesting when a dataset grows) we have to include the
+        event count in the path name. The underlying `problem' is that
+        CRAB does not overwrite existing output files so if the output
+        file already exists CRAB will fail to copy back the output.
+
+        NOTE: It's not possible to create different kinds of
+        harvesting jobs in a single call to this tool. However, in
+        principle it could be possible to create both data and MC jobs
+        in a single go.
+
+        """
+
+        castor_path = castor_path_common
+
+        ###
+
+        # The run number part.
+        castor_path = os.path.join(castor_path, "run_%d" % run_number)
+
+        ###
+
+        # The event count (i.e. the number of events we currently see
+        # for this dataset).
+        nevents = self.datasets_information[dataset_name] \
+                  ["num_events"][run_number]
+        castor_path = os.path.join(castor_path, "nevents_%d" % nevents)
+
+        ###
+
+        castor_path = os.path.normpath(castor_path)
+
+        # End of create_castor_path_name_special.
         return castor_path
 
     ##########
@@ -3774,21 +3815,19 @@ class CMSHarvester(object):
             self.datasets_information[dataset_name]["mirrored"] = mirror_catalog
             self.datasets_information[dataset_name]["sites"] = sites_catalog
 
-            # In principle each run of each dataset should have a
-            # different CASTOR output path.
-            # TODO TODO TODO
-            # This is the quick-n-dirty solution. It should be
-            # polished a bit and moved into create_castor_path_name.
-            castor_path = self.create_castor_path_name(dataset_name)
+            # Each run of each dataset has a different CASTOR output
+            # path.
+            castor_path_common = self.create_castor_path_name_common(dataset_name)
             self.logger.info("    output will go into `%s'" % \
-                             castor_path)
+                             castor_path_common)
 
             castor_paths = dict(zip(runs,
-                                    [os.path.join(castor_path, "run_%d" % i) \
+                                    [self.create_castor_path_name_special(dataset_name, i, castor_path_common) \
                                      for i in runs]))
+            for path_name in castor_paths.values():
+                self.logger.debug("      %s" % path_name)
             self.datasets_information[dataset_name]["castor_path"] = \
                                                                    castor_paths
-            # TODO TODO TODO end
 
         # End of build_datasets_information.
 
