@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20090910
+## Last change: 20090921
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.3.10"
+__version__ = "1.4.0"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -763,9 +763,15 @@ class CMSHarvester(object):
         harvesting_type = harvesting_type.lower()
         castor_path = os.path.join(castor_path, harvesting_type)
 
-        # The CMSSW release version (only the digits).
-        release_version = self.datasets_information \
-                          [dataset_name]["cmssw_version"]
+        # The CMSSW release version (only the `digits'). Note that the
+        # CMSSW version used here is the version used for harvesting,
+        # not the one from the dataset. This does make the results
+        # slightly harder to find. On the other hand it solves
+        # problems in case one re-harvests a given dataset with a
+        # different CMSSW version, which would lead to ambiguous path
+        # names. (Of course for many cases the harvesting is done with
+        # the same CMSSW version the dataset was created with.)
+        release_version = self.cmssw_version
         release_version = release_version.lower(). \
                           replace("cmssw", ""). \
                           strip("_")
@@ -817,6 +823,28 @@ class CMSHarvester(object):
                 self.logger.info("  %d/%d" % \
                                  (i + 1, ndirs))
             self.create_and_check_castor_dir(castor_dir)
+
+            # Now check if the directory is empty. If (an old version
+            # of) the output file already exists CRAB will run new
+            # jobs but never copy the results back. We assume the user
+            # knows what they are doing and only issue a warning in
+            # case the directory is not empty.
+            self.logger.debug("Checking if path `%s' is empty" % \
+                              castor_dir)
+            cmd = "rfdir %s" % castor_dir
+            (status, output) = commands.getstatusoutput(cmd)
+            if status != 0:
+                msg = "Could not access directory `%s'" \
+                      " !!! This is bad since I should have just" \
+                      " created it !!!" % castor_dir
+                self.logger.fatal(msg)
+                raise Error(msg)
+            pdb.set_trace()
+            if len(output) > 0:
+                self.logger.warning("Output directory `%s' is not empty:" \
+                                    " new jobs will fail to" \
+                                    " copy back output" % \
+                                    castor_dir)
 
         # End of create_and_check_castor_dirs.
 
