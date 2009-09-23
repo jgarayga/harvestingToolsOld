@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20090921
+## Last change: 20090923
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.5.0"
+__version__ = "1.5.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -2247,15 +2247,21 @@ class CMSHarvester(object):
                         sites_with_complete_copies.append(site_name)
                 if len(sites_with_complete_copies) < 1:
                     # This dataset/run is available at more than one
-                    # site, but no one has a complete copy.
+                    # site, but no one has a complete copy. So this is
+                    # a spread-out sample.
                     mirrored = False
                 else:
-                    # This dataset/run is available at more than one
-                    # site and at least one of them has a complete
-                    # copy. Even if this is only a single site, let's
-                    # call this `mirrored' and run the single-step
-                    # harvesting.
-                    mirrored = True
+                    if len(sites_with_complete_copies) > 1:
+                        # This sample is available (and complete) at
+                        # more than one site. Definitely mirrored.
+                        mirrored = True
+                    else:
+                        # This dataset/run is available at more than
+                        # one site and at least one of them has a
+                        # complete copy. Even if this is only a single
+                        # site, let's call this `mirrored' and run the
+                        # single-step harvesting.
+                        mirrored = True
 
 ##                site_names_ref = set(files_info[run_number].values()[0][1])
 ##                for site_names_tmp in files_info[run_number].values()[1:]:
@@ -2277,6 +2283,7 @@ class CMSHarvester(object):
                         complete_sites = [site for site in sites \
                                           if site in sites_with_complete_copies]
                         files_info[run_number][file_name] = (i, complete_sites)
+                    site_names = sites_with_complete_copies
 
             self.logger.debug("  for run #%d:" % run_number)
             num_events_catalog[run_number] = {}
