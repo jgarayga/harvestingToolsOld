@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20090923
+## Last change: 20090930
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.5.1"
+__version__ = "1.5.2"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -2853,7 +2853,7 @@ class CMSHarvester(object):
 
     # BUG BUG BUG
     # This is a bit of a redundant method, isn't it?
-    def create_config_file_name(self, dataset_name):
+    def create_config_file_name(self, dataset_name, run_number):
         """Generate the name of the configuration file to be run by
         CRAB.
 
@@ -2867,7 +2867,11 @@ class CMSHarvester(object):
             config_file_name = self.create_harvesting_config_file_name(dataset_name)
         elif self.harvesting_mode == "single-step-allow-partial":
             config_file_name = self.create_harvesting_config_file_name(dataset_name)
-            config_file_name = config_file_name.replace(".py", "_partial.py")
+            # Only add the alarming piece to the file name if this is
+            # a spread-out dataset.
+            if self.datasets_information[dataset_name] \
+               ["mirrored"][run_number] == False:
+                config_file_name = config_file_name.replace(".py", "_partial.py")
         elif self.harvesting_mode == "two-step":
             config_file_name = self.create_me_summary_config_file_name(dataset_name)
         else:
@@ -2972,8 +2976,12 @@ class CMSHarvester(object):
         output_file_name = "DQM_V0001_R%09d__%s.root" % \
                            (run_number, dataset_name_escaped)
         if self.harvesting_mode.find("partial") > -1:
-            output_file_name = output_file_name.replace(".root", \
-                                                        "_partial.root")
+            # Only add the alarming piece to the file name if this is
+            # a spread-out dataset.
+            if self.datasets_information[dataset_name] \
+                   ["mirrored"][run_number] == False:
+                output_file_name = output_file_name.replace(".root", \
+                                                            "_partial.root")
 
         # End of create_harvesting_output_file_name.
         return output_file_name
@@ -3103,10 +3111,10 @@ class CMSHarvester(object):
         for dataset_name in dataset_names:
             runs = self.datasets_to_use[dataset_name]
             dataset_name_escaped = self.escape_dataset_name(dataset_name)
-            config_file_name = self. \
-                               create_config_file_name(dataset_name)
             castor_prefix = self.castor_prefix
             for run in runs:
+                config_file_name = self. \
+                                   create_config_file_name(dataset_name, run)
                 output_file_name = self. \
                                    create_output_file_name(dataset_name, run)
 
