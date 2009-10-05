@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091001
+## Last change: 20091005
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.5.3"
+__version__ = "1.5.4"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1126,6 +1126,7 @@ class CMSHarvester(object):
         # sites_and_versions_cache does.
 
         site_name = None
+        cmd = None
         while len(sites) > 0 and \
               site_name is None:
 
@@ -1170,6 +1171,8 @@ class CMSHarvester(object):
 
         if site_name is None:
             self.logger.error("  --> no matching site found")
+            if not command is None:
+                self.logger.debug("      (command used: `%s')" % cmd)
         else:
             self.logger.debug("  --> selected site `%s'" % site_name)
 
@@ -2597,6 +2600,9 @@ class CMSHarvester(object):
             for run_number in self.datasets_information[dataset_name]["runs"]:
                 max_events = max(self.datasets_information[dataset_name]["sites"][run_number].values())
                 sites_with_max_events = [i[0] for i in self.datasets_information[dataset_name]["sites"][run_number].items() if i[1] == max_events]
+                self.logger.warning("Singlifying dataset `%s', " \
+                                    "run %d" % \
+                                    (dataset_name, run_number))
                 cmssw_version = self.datasets_information[dataset_name] \
                                 ["cmssw_version"]
                 selected_site = self.pick_a_site(sites_with_max_events,
@@ -2604,12 +2610,11 @@ class CMSHarvester(object):
 
                 # Let's tell the user that we're manhandling this dataset.
                 nevents_old = self.datasets_information[dataset_name]["num_events"][run_number]
-                self.logger.warning("Singlifying dataset `%s' -> " \
+                self.logger.warning("  --> " \
                                     "only harvesting partial statistics: " \
                                     "%d out of %d events (5.1%f%%) " \
                                     "at site `%s'" % \
-                                    (dataset_name,
-                                     max_events,
+                                    (max_events,
                                      nevents_old,
                                      100. * max_events / nevents_old,
                                      selected_site))
@@ -3167,6 +3172,9 @@ class CMSHarvester(object):
                 if len(site_names) > 1:
                     cmssw_version = self.datasets_information[dataset_name] \
                                     ["cmssw_version"]
+                    self.logger.info("Picking site for mirrored dataset " \
+                                     "`%s'" % \
+                                     dataset_name)
                     site_name = self.pick_a_site(site_names, cmssw_version)
                 else:
                     site_name = site_names[0]
@@ -3251,6 +3259,9 @@ class CMSHarvester(object):
         config_options.filetype = "EDM"
         # This seems to be new in CMSSW 3.3.X, no clue what it does.
         config_options.gflash = "dummy_value"
+        # This seems to be new in CMSSW 3.3.0.pre6, no clue what it
+        # does.
+        config_options.himix = "dummy_value"
 
         ###
 
