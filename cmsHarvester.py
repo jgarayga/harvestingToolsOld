@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20090930
+## Last change: 20091001
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.5.2"
+__version__ = "1.5.3"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -804,6 +804,14 @@ class CMSHarvester(object):
         harvesting jobs in a single call to this tool. However, in
         principle it could be possible to create both data and MC jobs
         in a single go.
+
+        NOTE: The number of events used in the path name is the
+        _total_ number of events in the dataset/run at the time of
+        harvesting. If we're doing partial harvesting the final
+        results will reflect lower statistics. This is a) the easiest
+        to code and b) the least likely to lead to confusion if
+        someone ever decides to swap/copy around file blocks between
+        sites.
 
         """
 
@@ -2593,7 +2601,30 @@ class CMSHarvester(object):
                                 ["cmssw_version"]
                 selected_site = self.pick_a_site(sites_with_max_events,
                                                  cmssw_version)
+
+                # Let's tell the user that we're manhandling this dataset.
+                nevents_old = self.datasets_information[dataset_name]["num_events"][run_number]
+                self.logger.warning("Singlifying dataset `%s' -> " \
+                                    "only harvesting partial statistics: " \
+                                    "%d out of %d events (5.1%f%%) " \
+                                    "at site `%s'" % \
+                                    (dataset_name,
+                                     max_events,
+                                     nevents_old,
+                                     100. * max_events / nevents_old,
+                                     selected_site))
+                self.logger.warning("!!! Please note that the number of " \
+                                    "events in the output path name will " \
+                                    "NOT reflect the actual statistics in " \
+                                    "the harvested results !!!")
+
+                # We found the site with the highest statistics and
+                # the corresponding number of events. (CRAB gets upset
+                # if we ask for more events than there are at a given
+                # site.) Now update this information in our main
+                # datasets_information variable.
                 self.datasets_information[dataset_name]["sites"][run_number] = {selected_site: max_events}
+                self.datasets_information[dataset_name]["num_events"][run_number] = max_events
                 #self.datasets_information[dataset_name]["sites"][run_number] = [selected_site]
 
         # End of singlify_datasets.
@@ -2867,11 +2898,12 @@ class CMSHarvester(object):
             config_file_name = self.create_harvesting_config_file_name(dataset_name)
         elif self.harvesting_mode == "single-step-allow-partial":
             config_file_name = self.create_harvesting_config_file_name(dataset_name)
-            # Only add the alarming piece to the file name if this is
-            # a spread-out dataset.
-            if self.datasets_information[dataset_name] \
-               ["mirrored"][run_number] == False:
-                config_file_name = config_file_name.replace(".py", "_partial.py")
+##            # Only add the alarming piece to the file name if this is
+##            # a spread-out dataset.
+##            pdb.set_trace()
+##            if self.datasets_information[dataset_name] \
+##                   ["mirrored"][run_number] == False:
+##                config_file_name = config_file_name.replace(".py", "_partial.py")
         elif self.harvesting_mode == "two-step":
             config_file_name = self.create_me_summary_config_file_name(dataset_name)
         else:
@@ -3297,8 +3329,11 @@ class CMSHarvester(object):
 
         # Make sure we get the `workflow' correct. As far as I can see
         # this is only important for the output file name.
+        workflow_name = dataset_name
+        if self.harvesting_mode == "single-step-allow-partial":
+            workflow_name += "_partial"
         customisations.append("process.dqmSaver.workflow = \"%s\"" % \
-                              dataset_name)
+                              workflow_name)
 
         # BUG BUG BUG
         # This still does not work. The current two-step harvesting
