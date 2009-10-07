@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091005
+## Last change: 20091007
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.5.4"
+__version__ = "1.5.5"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1379,7 +1379,7 @@ class CMSHarvester(object):
         ###
 
         # We need an input method so we can find the dataset name(s).
-        if self.input_method is None:
+        if self.input_method["use"] is None:
             msg = "Please specify an input dataset name or a list file name"
             self.logger.fatal(msg)
             raise Usage(msg)
