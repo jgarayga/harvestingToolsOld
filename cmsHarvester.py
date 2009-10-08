@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091007
+## Last change: 20091008
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -29,7 +29,7 @@ your favourite is missing):
 
 ###########################################################################
 
-__version__ = "1.5.5"
+__version__ = "1.5.6"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1350,6 +1350,14 @@ class CMSHarvester(object):
         """
 
         self.logger.info("Checking completeness/correctness of input...")
+
+        # The cmsHarvester does not take (i.e. understand) any
+        # arguments so there should not be any.
+        if len(self.args) > 0:
+            msg = "Sorry but I don't understand `%s'" % \
+                  (" ".join(self.args))
+            self.logger.fatal(msg)
+            raise Usage(msg)
 
         # BUG BUG BUG
         # While we wait for some bugs left and right to get fixed, we
