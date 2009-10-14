@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091008
+## Last change: 20091014
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -16,20 +16,22 @@
 These are the basic kinds of harvesting implemented (contact me if
 your favourite is missing):
 
-- DQMOffline : Run for real data (could also be run for MC). Maps to
-               the `dqmHarvesting' sequence.
-
 - RelVal : Run for release validation samples. Makes heavy use of MC
-           truth information. Maps to the `validationHarvesting' sequence.
+           truth information.
 
-- Preproduction : Run for MC preproduction samples. Maps to the
-                  `validationprodHarvesting' sequence.
+- Preproduction : Run for MC preproduction samples.
+
+- DQMOffline : Run for real data (could also be run for MC).
+
+For the mappings of these harvesting types to sequence names please
+see the setup_harvesting_info() and option_handler_list_types()
+methods.
 
 """
 
 ###########################################################################
 
-__version__ = "1.5.6"
+__version__ = "1.6.0"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -184,9 +186,9 @@ class CMSHarvester(object):
         # These are the harvesting types allowed. See the head of this
         # file for more information.
         self.harvesting_types = [
-            "DQMOffline",
             "RelVal",
-            "preproduction"
+            "Preproduction",
+            "DQMOffline",
             ]
 
         # These are the possible harvesting modes:
@@ -218,28 +220,9 @@ class CMSHarvester(object):
         self.globaltag = None
 
         # This contains information specific to each of the harvesting
-        # types. Used to create the harvesting configuration.
-        harvesting_info = {}
-
-        harvesting_info["DQMOffline"] = {}
-        harvesting_info["DQMOffline"]["step_string"] = "dqmHarvesting"
-        harvesting_info["DQMOffline"]["beamspot"] = None
-        harvesting_info["DQMOffline"]["eventcontent"] = None
-        harvesting_info["DQMOffline"]["harvesting"] = "AtRunEnd"
-
-        harvesting_info["RelVal"] = {}
-        harvesting_info["RelVal"]["step_string"] = "validationHarvesting"
-        harvesting_info["RelVal"]["beamspot"] = None
-        harvesting_info["RelVal"]["eventcontent"] = None
-        harvesting_info["RelVal"]["harvesting"] = "AtRunEnd"
-
-        harvesting_info["preproduction"] = {}
-        harvesting_info["preproduction"]["step_string"] = "validationprodHarvesting"
-        harvesting_info["preproduction"]["beamspot"] = None
-        harvesting_info["preproduction"]["eventcontent"] = None
-        harvesting_info["preproduction"]["harvesting"] = "AtRunEnd"
-
-        self.harvesting_info = harvesting_info
+        # types. Used to create the harvesting configuration. It is
+        # filled by setup_harvesting_info().
+        self.harvesting_info = None
 
         ###
 
@@ -537,11 +520,8 @@ class CMSHarvester(object):
             raise Usage(msg)
         self.harvesting_type = self.harvesting_types[type_index]
 
-        self.logger.info("Harvesting type to be used: `%s' (%s)" % \
-                         (self.harvesting_type,
-                          "HARVESTING:%s" % \
-                          self.harvesting_info[self.harvesting_type] \
-                          ["step_string"]))
+        self.logger.info("Harvesting type to be used: `%s'" % \
+                         self.harvesting_type)
 
         # End of option_handler_harvesting_type.
 
@@ -732,6 +712,184 @@ class CMSHarvester(object):
                          self.castor_base_dir)
 
         # End of option_handler_castor_dir.
+
+    ##########
+
+    def option_handler_list_types(self, option, opt_str, value, parser):
+        """List all harvesting types and their mappings.
+
+        This lists all implemented harvesting types with their
+        corresponding mappings to sequence names. This had to be
+        separated out from the help since it depends on the CMSSW
+        version and was making things a bit of a mess.
+
+        NOTE: There is no way (at least not that I could come up with)
+        to code this in a neat generic way that can be read both by
+        this method and by setup_harvesting_info(). Please try hard to
+        keep these two methods in sync!
+
+        """
+
+        sep_line = "-" * 50
+        sep_line_short = "-" * 20
+
+        print sep_line
+        print "The following harvesting types are available:"
+        print sep_line
+
+        print "`RelVal' maps to:"
+        print "  pre-3_3_0           : HARVESTING:validationHarvesting"
+        print "  3_3_0_pre1-4        : HARVESTING:validationHarvesting"
+        print "  3_3_0_pre5          : HARVESTING:validationHarvesting+dqmHarvesting"
+        print "  3_3_0_pre6          : HARVESTING:validationHarvesting"
+        print "  3_3_0               : HARVESTING:validationHarvesting+dqmHarvesting"
+        print "  3_4_0_pre1          : HARVESTING:validationHarvesting"
+        print "  3_4_0_pre2 and later: HARVESTING:validationHarvesting+dqmHarvesting"
+
+        print sep_line_short
+
+        print "`Preproduction' maps to:"
+        print "  pre-3_3_0           : HARVESTING:validationprodHarvesting"
+        print "  3_3_0_pre1-4        : HARVESTING:validationprodHarvesting"
+        print "  3_3_0_pre5          : HARVESTING:validationpreprodHarvesting+dqmHarvestingPOG"
+        print "  3_3_0_pre6          : HARVESTING:validationprodHarvesting"
+        print "  3_3_0               : HARVESTING:validationpreprodHarvesting+dqmHarvestingPOG"
+        print "  3_4_0_pre1          : HARVESTING:validationprodHarvesting"
+        print "  3_4_0_pre2 and later: HARVESTING:validationpreprodHarvesting+dqmHarvestingPOG"
+
+        print sep_line_short
+
+        print "`DQMOffline' maps to:"
+        print "  always              : HARVESTING:dqmHarvesting"
+
+        print sep_line
+
+        # We're done, let's quit. (This is the same thing optparse
+        # does after printing the help.)
+        raise SystemExit
+
+        # End of option_handler_list_types.
+
+    ##########
+
+    def setup_harvesting_info(self):
+        """Fill our dictionary with all info needed to understand
+        harvesting.
+
+        This depends on the CMSSW version since at some point the
+        names and sequences were modified.
+
+        NOTE: There is no way (at least not that I could come up with)
+        to code this in a neat generic way that can be read both by
+        this method and by option_handler_list_types(). Please try
+        hard to keep these two methods in sync!
+
+        """
+
+        assert not self.cmssw_version is None, \
+               "ERROR setup_harvesting() requires " \
+               "self.cmssw_version to be set!!!"
+
+        harvesting_info = {}
+
+        # This is the version-independent part.
+        harvesting_info["DQMOffline"] = {}
+        harvesting_info["DQMOffline"]["beamspot"] = None
+        harvesting_info["DQMOffline"]["eventcontent"] = None
+        harvesting_info["DQMOffline"]["harvesting"] = "AtRunEnd"
+
+        harvesting_info["RelVal"] = {}
+        harvesting_info["RelVal"]["beamspot"] = None
+        harvesting_info["RelVal"]["eventcontent"] = None
+        harvesting_info["RelVal"]["harvesting"] = "AtRunEnd"
+
+        harvesting_info["Preproduction"] = {}
+        harvesting_info["Preproduction"]["beamspot"] = None
+        harvesting_info["Preproduction"]["eventcontent"] = None
+        harvesting_info["Preproduction"]["harvesting"] = "AtRunEnd"
+
+        # This is the version-dependent part. And I know, strictly
+        # speaking it's not necessary to fill in all three types since
+        # in a single run we'll only use one type anyway. This does
+        # look more readable, however, and required less thought from
+        # my side when I put this together.
+
+        # DEBUG DEBUG DEBUG
+        # Check that we understand our own version naming.
+        assert self.cmssw_version.startswith("CMSSW_")
+        # DEBUG DEBUG DEBUG end
+
+        version = self.cmssw_version[6:]
+
+        #----------
+
+        # RelVal
+        step_string = None
+        if version < "3_3_0":
+            step_string = "validationHarvesting"
+        elif version >= "3_4_0_pre2":
+            step_string = "validationHarvesting+dqmHarvesting"
+        else:
+            if version in ["3_3_0_pre1", "3_3_0_pre2",
+                           "3_3_0_pre3", "3_3_0_pre4",
+                           "3_3_0_pre6", "3_4_0_pre1"]:
+                step_string = "validationHarvesting"
+            elif version in ["3_3_0_pre5", "3_3_0"]:
+                step_string = "validationHarvesting+dqmHarvesting"
+
+        harvesting_info["RelVal"]["step_string"] = step_string
+
+        # DEBUG DEBUG DEBUG
+        # Let's make sure we found something.
+        assert not step_string is None, \
+               "ERROR Could not decide a RelVal harvesting sequence " \
+               "for CMSSW version %s" % self.cmssw_version
+        # DEBUG DEBUG DEBUG end
+
+        #----------
+
+        # Preproduction (follows the same pattern as RelVal)
+        step_string = None
+        if version < "3_3_0":
+            step_string = "validationprodHarvesting"
+        elif version >= "3_4_0_pre2":
+            step_string = "validationpreprodHarvesting+dqmHarvestingPOG"
+        else:
+            if version in ["3_3_0_pre1", "3_3_0_pre2",
+                           "3_3_0_pre3", "3_3_0_pre4",
+                           "3_3_0_pre6", "3_4_0_pre1"]:
+                step_string = "validationprodHarvesting"
+            elif version in ["3_3_0_pre5", "3_3_0"]:
+                step_string = "validationpreprodHarvesting+dqmHarvestingPOG"
+
+        harvesting_info["Preproduction"]["step_string"] = step_string
+
+        # DEBUG DEBUG DEBUG
+        # Let's make sure we found something.
+        assert not step_string is None, \
+               "ERROR Could not decide a Preproduction harvesting " \
+               "sequence for CMSSW version %s" % self.cmssw_version
+        # DEBUG DEBUG DEBUG end
+
+        #----------
+
+        # DQMOffline
+        step_string = "dqmHarvesting"
+
+        harvesting_info["DQMOffline"]["step_string"] = step_string
+
+        #----------
+
+        self.harvesting_info = harvesting_info
+
+        self.logger.info("Based on the CMSSW version (%s) " \
+                         "I decided to use the `HARVESTING:%s' " \
+                         "sequence for %s harvesting" % \
+                         (self.cmssw_version,
+                          self.harvesting_info[self.harvesting_type]["step_string"],
+                          self.harvesting_type))
+
+        # End of setup_harvesting_info.
 
     ##########
 
@@ -1213,18 +1371,12 @@ class CMSHarvester(object):
                           callback=self.option_handler_force)
 
         # Choose between the different kinds of harvesting.
-        harvesting_types_tmp = ["%s = HARVESTING:%s" % \
-                                (i, self.harvesting_info[i]["step_string"]) \
-                                for i in self.harvesting_types]
         parser.add_option("", "--harvesting_type",
-                          help="Harvesting type: %s (%s)" % \
-                          (", ".join(self.harvesting_types),
-                           ", ".join(harvesting_types_tmp)),
+                          help="Harvesting type: %s" % \
+                          ", ".join(self.harvesting_types),
                           action="callback",
                           callback=self.option_handler_harvesting_type,
                           type="string",
-                          #nargs=1,
-                          #dest="self.harvesting_type",
                           metavar="HARVESTING_TYPE")
 
         # Choose between single-step and two-step mode.
@@ -1309,6 +1461,14 @@ class CMSHarvester(object):
                           callback=self.option_handler_castor_dir,
                           type="string",
                           metavar="CASTORDIR")
+
+        # This is the command line flag to list all harvesting
+        # type-to-sequence mappings.
+        parser.add_option("-l", "--list",
+                          help="List all harvesting types and their" \
+                          "corresponding sequence names",
+                          action="callback",
+                          callback=self.option_handler_list_types)
 
         # If nothing was specified: tell the user how to do things the
         # next time and exit.
@@ -3966,6 +4126,11 @@ class CMSHarvester(object):
                 self.check_dbs()
                 # and if all is fine setup the Python side.
                 self.setup_dbs()
+
+                # Fill our dictionary with all the required info we
+                # need to understand harvesting jobs. This needs to be
+                # done after the CMSSW version is known.
+                self.setup_harvesting_info()
 
                 # Obtain list of dataset names to consider
                 self.build_dataset_use_list()
