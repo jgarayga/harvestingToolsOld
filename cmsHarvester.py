@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091014
+## Last change: 20091015
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -31,7 +31,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "1.7.1"
+__version__ = "1.7.2"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -3572,7 +3572,6 @@ class CMSHarvester(object):
         # Figure out the name of the reference histograms tag. If one
         # was specified on the command line of course we'll use that
         # one.
-        pdb.set_trace()
         if self.ref_hist_tag is None:
             dataset_name_escaped = self.escape_dataset_name(dataset_name)
             ref_hist_tag_name = "REF_HIST_%s" % dataset_name_escaped
