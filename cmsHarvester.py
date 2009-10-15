@@ -31,7 +31,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "1.6.0"
+__version__ = "1.7.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -218,6 +218,18 @@ class CMSHarvester(object):
         # data.
         # BUG BUG BUG end
         self.globaltag = None
+
+        # It is possible to override the reference histograms from the
+        # command line by specifying the correct tag in the
+        # database. See the create_es_prefer_snippet() method for
+        # details.
+        self.ref_hist_tag = None
+
+        # The database name and account are hard-coded. They are not
+        # likely to change before the end-of-life of this tool.
+        self.frontier_connection_name = "frontier://" \
+                                        "cmsfrontier:8000/" \
+                                        "FrontierProd/"
 
         # This contains information specific to each of the harvesting
         # types. Used to create the harvesting configuration. It is
@@ -580,6 +592,34 @@ class CMSHarvester(object):
                          self.globaltag)
 
         # End of option_handler_globaltag.
+
+    ##########
+
+    def option_handler_ref_hist_tag(self, option, opt_str, value, parser):
+        """Use this option to override the reference histograms.
+
+        Normally the reference histograms are taken from the database
+        based on the GlobalTag (and for MC based on the dataset name
+        as well). Use this command line option to overrided these
+        default references by specifying the tag to be used.
+
+        Needless to say one should know what one's doing not to screw
+        things up this way...
+
+        """
+
+        # Make sure this flag occurred only once.
+        if not self.ref_hist_tag is None:
+            msg = "Only one reference histogram tag should be specified"
+            self.logger.fatal(msg)
+            raise Usage(msg)
+        self.ref_hist_tag = value
+
+        self.logger.warning("Overriding default choice of " \
+                            "reference histograms with tag `%s'" % \
+                            self.ref_hist_tag)
+
+        # End of option_handler_ref_hist_tag.
 
     ##########
 
@@ -1399,6 +1439,16 @@ class CMSHarvester(object):
                           type="string",
                           metavar="GLOBALTAG")
 
+        # Override the tag to be used to find the reference histograms
+        # in the database.
+        parser.add_option("", "--ref-hist-tag",
+                          help="Tag to be used to find the reference " \
+                          "histograms in the database.",
+                          action="callback",
+                          callback=self.option_handler_ref_hist_tag,
+                          type="string",
+                          metavar="REFHISTTAG")
+
         # Option to specify the name (or a regexp) of the dataset(s)
         # to be used.
         parser.add_option("", "--dataset",
@@ -1603,6 +1653,29 @@ class CMSHarvester(object):
             self.logger.warning("I will skip all data datasets.")
 
         # TODO TODO TODO end
+
+        ###
+
+        # If a GlobalTag was specified, let's check if it exists.
+        if not self.globaltag is None:
+            if not self.check_globaltag():
+                msg = "GlobalTag `%s' does not exist!" % \
+                      self.globaltag
+                self.logger.fatal(msg)
+                raise Usage(msg)
+
+        ###
+
+        # If a tag for the reference histograms was specified, let's
+        # check if that exists.
+        if not self.ref_hist_tag is None:
+            if not self.check_ref_hist_tag():
+                msg = "Reference histogram tag `%s' does not exist!" % \
+                      self.ref_hist_tag
+                self.logger.fatal(msg)
+                raise Usage(msg)
+
+        ###
 
         # End of check_input_status.
 
@@ -3395,6 +3468,147 @@ class CMSHarvester(object):
 
     ##########
 
+    def check_globaltag(self, globaltag=None):
+        """Check if globaltag exists.
+
+        Check if globaltag exists as GlobalTag in the database given
+        by self.frontier_connection_name. If globaltag is None,
+        self.globaltag is used instead.
+
+        """
+
+        if globaltag is None:
+            globaltag = self.globaltag
+
+        # All GlobalTags should end in `::All', right?
+        if globaltag.endswith("::All"):
+            globaltag = globaltag[:-5]
+
+        connect_name = self.frontier_connection_name
+        connect_name += "CMS_COND_31X_GLOBALTAG"
+
+        self.logger.info("Checking existence of GlobalTag `%s'" % \
+                         globaltag)
+        self.logger.debug("  (Using database connection `%s')" % \
+                          connect_name)
+
+        cmd = "cmscond_tagtree_list -c %s -T %s" % \
+              (connect_name, globaltag)
+        (status, output) = commands.getstatusoutput(cmd)
+        if status != 0:
+            msg = "Could not check existence of GlobalTag `%s' in `%s'" % \
+                  (globaltag, connect_name)
+            self.logger.fatal(msg)
+            self.logger.debug(output)
+            raise Error(msg)
+        if output.find("does not exist") > -1:
+            self.logger.debug("GlobalTag `%s' does not exist in `%s':" % \
+                              (globaltag, connect_name))
+            self.logger.debug(output)
+            tag_exists = False
+        else:
+            tag_exists = True
+        self.logger.debug("  GlobalTag exists? -> %s" % tag_exists)
+
+        # End of check_globaltag.
+        return tag_exists
+
+    ##########
+
+    def check_ref_hist_tag(self, tag_name=None):
+        """Check the existence of tag_name in database connect_name.
+
+        Check if tag_name exists as a reference histogram tag in the
+        database given by self.frontier_connection_name. If tag_name
+        is None, self.ref_hist_tag is used instead.
+
+        """
+
+        if tag_name is None:
+            tag_name = self.ref_hist_tag
+
+        connect_name = self.frontier_connection_name
+        connect_name += "CMS_COND_31X_DQM_SUMMARY"
+
+        self.logger.info("Checking existence of reference " \
+                         "histogram tag `%s'" % \
+                         tag_name)
+        self.logger.debug("  (Using database connection `%s')" % \
+                          connect_name)
+
+        cmd = "cmscond_list_iov -c %s" % \
+              connect_name
+        (status, output) = commands.getstatusoutput(cmd)
+        if status != 0:
+            msg = "Could not check existence of tag `%s' in `%s'" % \
+                  (tag_name, connect_name)
+            self.logger.fatal(msg)
+            self.logger.debug(output)
+            raise Error(msg)
+        if not tag_name in output.split():
+            self.logger.debug("Reference histogram tag `%s' does not exist in `%s'" % \
+                              (tag_name, connect_name))
+            self.logger.debug(" Existing tags: `%s'" % \
+                              "', `".join(output.split()))
+            tag_exists = False
+        else:
+            tag_exists = True
+        self.logger.debug("  Reference histogram tag exists? -> %s" % tag_exists)
+
+        # End of check_ref_hist_tag.
+        return tag_exists
+
+    ##########
+
+    def create_es_prefer_snippet(self, dataset_name):
+        """Build the es_prefer snippet for the reference histograms.
+
+        The building of the snippet is wrapped in some care-taking
+        code that figures out the name of the reference histogram set
+        and makes sure the corresponding tag exists.
+
+        """
+
+        # Figure out the name of the reference histograms tag. If one
+        # was specified on the command line of course we'll use that
+        # one.
+        pdb.set_trace()
+        if self.ref_hist_tag is None:
+            dataset_name_escaped = self.escape_dataset_name(dataset_name)
+            ref_hist_tag_name = "REF_HIST_%s" % dataset_name_escaped
+            # In this case we need to make sure that it exists.
+            if not self.check_ref_hist_tag(ref_hist_tag_name):
+                msg = "Reference histogram tag `%s' " \
+                      "(which I guessed based on the dataset name) " \
+                      "does not exist!" % \
+                      ref_hist_tag_name
+                self.logger.fatal(msg)
+                raise Usage(msg)
+        else:
+            ref_hist_tag_name = self.ref_hist_tag
+
+        connect_name = self.frontier_connection_name
+        connect_name += "CMS_COND_31X_DQM_SUMMARY"
+        record_name = "DQMReferenceHistogramRootFileRcd"
+
+        # Build up the code snippet.
+        code_lines = []
+        code_lines.append("from CondCore.DBCommon.CondDBSetup_cfi import *")
+        code_lines.append("process.ref_hist_source = cms.ESSource(\"PoolDBESSource\", CondDBSetup,")
+        code_lines.append("                                       connect = cms.string(\"%s\")," % connect_name)
+        code_lines.append("                                       toGet = cms.VPSet(cms.PSet(record = cms.string(\"%s\")," % record_name)
+        code_lines.append("                                                                  tag = cms.string(\"%s\"))," % ref_hist_tag_name)
+        code_lines.append("                                                         )")
+        code_lines.append("                                       )")
+        code_lines.append("process.es_prefer_ref_hist_source = cms.ESPrefer(\"PoolDBESSource\", \"ref_hist_source\")")
+
+        snippet = "\n".join(code_lines)
+
+        # End of create_es_prefer_snippet.
+        return snippet
+
+    ##########
+
     def create_harvesting_config(self, dataset_name):
         """Create the Python harvesting configuration for harvesting.
 
@@ -3502,9 +3716,39 @@ class CMSHarvester(object):
         customisations.append("# Now follow some customisations")
         customisations.append("")
 
-        # This makes sure all reference histograms are saved to the
-        # output ROOT file.
-        customisations.append("process.dqmSaver.referenceHandling = \"all\"")
+        # About the reference histograms... For data there is only one
+        # set of references and those are picked up automatically
+        # based on the GlobalTag. For MC we have to do some more work
+        # since the reference histograms to be used depend on the MC
+        # sample at hand. In this case we glue in an es_prefer snippet
+        # to pick up the references. We do this only for RelVals since
+        # for Preproduction there are no meaningful references so far.
+
+        # NOTE: Due to the lack of meaningful references for
+        # Preproduction samples reference histograms are explicitly
+        # switched off in this case.
+
+        # NOTE: In case a reference histogram tag was specified on the
+        # command line the es_prefer snippet is _always_ used with
+        # that tag.
+
+        use_es_prefer = (not self.ref_hist_tag is None) or \
+                        (self.harvesting_type == "RelVal")
+        use_refs = use_es_prefer or \
+                   (not self.harvesting_type == "Preproduction")
+
+        if not use_refs:
+            # TODO TODO TODO
+            # Disable reference histograms explicitly.
+            # TODO TODO TODO end
+            customisations.append("process.dqmSaver.referenceHandling = \"skip\"")
+        else:
+            # This makes sure all reference histograms are saved to
+            # the output ROOT file.
+            customisations.append("process.dqmSaver.referenceHandling = \"all\"")
+            if use_es_prefer:
+                es_prefer_snippet = self.create_es_prefer_snippet(dataset_name)
+                customisations.append(es_prefer_snippet)
 
         # Make sure we get the `workflow' correct. As far as I can see
         # this is only important for the output file name.
