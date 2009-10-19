@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "1.7.3"
+__version__ = "1.7.4"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -227,6 +227,10 @@ class CMSHarvester(object):
         # database. See the create_es_prefer_snippet() method for
         # details.
         self.ref_hist_tag = None
+
+        # It's also possible to switch off the use of reference
+        # histograms altogether.
+        self.use_ref_hists = True
 
         # The database name and account are hard-coded. They are not
         # likely to change before the end-of-life of this tool.
@@ -616,6 +620,12 @@ class CMSHarvester(object):
             msg = "Only one reference histogram tag should be specified"
             self.logger.fatal(msg)
             raise Usage(msg)
+        # And check that we're allowed to use reference histograms.
+        if not self.use_ref_hists:
+            msg = "Use of reference histograms is switched off. " \
+                  "Did you specify both --no-ref-hists and --ref-hist-tag?"
+            self.logger.fatal(msg)
+            raise Usage(msg)
         self.ref_hist_tag = value
 
         self.logger.warning("Overriding default choice of " \
@@ -623,6 +633,25 @@ class CMSHarvester(object):
                             self.ref_hist_tag)
 
         # End of option_handler_ref_hist_tag.
+
+    ##########
+
+    def option_handler_no_ref_hists(self, option, opt_str, value, parser):
+        "Switch use of all reference histograms off."
+
+        # Check if we were also asked to use a specific reference
+        # histogram set (i.e. tag). That would not make sense.
+        if not self.ref_hist_tag is None:
+            msg = "Please don't use --ref-hist-tag and --no-ref-hists " \
+                  "together. (This would not make sense.)"
+            self.logger.fatal(msg)
+            raise Usage(msg)
+
+        self.use_ref_hists = False
+
+        self.logger.warning("Switching off all use of reference histograms")
+
+        # End of option_handler_no_ref_hists.
 
     ##########
 
@@ -1468,6 +1497,12 @@ class CMSHarvester(object):
                           callback=self.option_handler_ref_hist_tag,
                           type="string",
                           metavar="REFHISTTAG")
+
+        # Allow switching off of reference histograms.
+        parser.add_option("", "--no-ref-hists",
+                          help="Don't use any reference histograms",
+                          action="callback",
+                          callback=self.option_handler_no_ref_hists)
 
         # Option to specify the name (or a regexp) of the dataset(s)
         # to be used.
@@ -3755,6 +3790,8 @@ class CMSHarvester(object):
                         (self.harvesting_type == "RelVal")
         use_refs = use_es_prefer or \
                    (not self.harvesting_type == "Preproduction")
+        # Allow global override.
+        use_refs = use_refs and self.use_ref_hists
 
         if not use_refs:
             # TODO TODO TODO
