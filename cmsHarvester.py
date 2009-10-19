@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091015
+## Last change: 20091019
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -19,6 +19,8 @@ your favourite is missing):
 - RelVal : Run for release validation samples. Makes heavy use of MC
            truth information.
 
+- RelValFS: FastSim RelVal.
+
 - Preproduction : Run for MC preproduction samples.
 
 - DQMOffline : Run for real data (could also be run for MC).
@@ -31,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "1.7.2"
+__version__ = "1.7.3"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -187,6 +189,7 @@ class CMSHarvester(object):
         # file for more information.
         self.harvesting_types = [
             "RelVal",
+            "RelValFS",
             "Preproduction",
             "DQMOffline",
             ]
@@ -788,6 +791,11 @@ class CMSHarvester(object):
 
         print sep_line_short
 
+        print "`RelValFS' maps to:"
+        print "  always              : HARVESTING:validationHarvestingFS"
+
+        print sep_line_short
+
         print "`Preproduction' maps to:"
         print "  pre-3_3_0           : HARVESTING:validationprodHarvesting"
         print "  3_3_0_pre1-4        : HARVESTING:validationprodHarvesting"
@@ -843,6 +851,11 @@ class CMSHarvester(object):
         harvesting_info["RelVal"]["eventcontent"] = None
         harvesting_info["RelVal"]["harvesting"] = "AtRunEnd"
 
+        harvesting_info["RelValFS"] = {}
+        harvesting_info["RelValFS"]["beamspot"] = None
+        harvesting_info["RelValFS"]["eventcontent"] = None
+        harvesting_info["RelValFS"]["harvesting"] = "AtRunEnd"
+
         harvesting_info["Preproduction"] = {}
         harvesting_info["Preproduction"]["beamspot"] = None
         harvesting_info["Preproduction"]["eventcontent"] = None
@@ -885,6 +898,13 @@ class CMSHarvester(object):
                "ERROR Could not decide a RelVal harvesting sequence " \
                "for CMSSW version %s" % self.cmssw_version
         # DEBUG DEBUG DEBUG end
+
+        #----------
+
+        # RelVal
+        step_string = "validationHarvestingFS"
+
+        harvesting_info["RelValFS"]["step_string"] = step_string
 
         #----------
 
