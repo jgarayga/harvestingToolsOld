@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091019
+## Last change: 20091021
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "1.7.4"
+__version__ = "1.7.5"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -233,10 +233,12 @@ class CMSHarvester(object):
         self.use_ref_hists = True
 
         # The database name and account are hard-coded. They are not
-        # likely to change before the end-of-life of this tool.
+        # likely to change before the end-of-life of this
+        # tool. Actually there is a way to override this from the
+        # command line. Please only use this for testing purposes.
         self.frontier_connection_name = "frontier://" \
-                                        "cmsfrontier:8000/" \
                                         "FrontierProd/"
+        self.frontier_connection_overridden = False
 
         # This contains information specific to each of the harvesting
         # types. Used to create the harvesting configuration. It is
@@ -652,6 +654,34 @@ class CMSHarvester(object):
         self.logger.warning("Switching off all use of reference histograms")
 
         # End of option_handler_no_ref_hists.
+
+    ##########
+
+    def option_handler_frontier_connection(self, option, opt_str, value, parser):
+        """Override the default Frontier connection string.
+
+        Please only use this for testing (e.g. when a test payload has
+        been inserted into cms_orc_off instead of cms_orc_on).
+
+        """
+
+        # Make sure that this option is specified only once. (Okay, in
+        # a bit of a dodgy way...)
+        if self.frontier_connection_overridden == True:
+            msg = "Please specify only one Frontier connection"
+            self.logger.fatal(msg)
+            raise Usage(msg)
+
+        if not value.endswith("/"):
+            value += "/"
+
+        self.frontier_connection_name = value
+        self.frontier_connection_overridden = True
+
+        self.logger.warning("Overriding default Frontier connection " \
+                            "with `%s'" % self.frontier_connection_name)
+
+        # End of option_handler_frontier_connection
 
     ##########
 
@@ -1284,6 +1314,12 @@ class CMSHarvester(object):
                 if status != 0:
                     # Path does not exist, let's try and create it.
                     self.logger.debug("Creating path `%s'" % path)
+                    # DEBUG DEBUG DEBUG
+                    # Checking shell mask for Stephen.
+                    cmd = "umask -S"
+                    (status, output) = commands.getstatusoutput(cmd)
+                    pdb.set_trace()
+                    # DEBUG DEBUG DEBUG end
                     cmd = "rfmkdir %s" % path
                     (status, output) = commands.getstatusoutput(cmd)
                     if status != 0:
@@ -1504,6 +1540,18 @@ class CMSHarvester(object):
                           action="callback",
                           callback=self.option_handler_no_ref_hists)
 
+        # Allow the default (i.e. the one that should be used)
+        # Frontier connection to be overridden.
+        parser.add_option("", "--frontier-connection",
+                          help="Use this Frontier connection to find " \
+                          "GlobalTags and LocalTags (for reference " \
+                          "histograms).\nPlease only use this for " \
+                          "testing.",
+                          action="callback",
+                          callback=self.option_handler_frontier_connection,
+                          type="string",
+                          metavar="FRONTIER")
+
         # Option to specify the name (or a regexp) of the dataset(s)
         # to be used.
         parser.add_option("", "--dataset",
@@ -1689,8 +1737,8 @@ class CMSHarvester(object):
             msg = "CASTOR area does not start with `%s'" % \
                   self.castor_prefix
             self.logger.fatal(msg)
-            if self.castor_base_dir.contains("castor") and \
-               not self.castor_base_dir.contains("cern.ch"):
+            if self.castor_base_dir.find("castor") > -1 and \
+               not self.castor_base_dir.find("cern.ch") > -1:
                 self.logger.fatal("Only CERN CASTOR is supported")
             raise Usage(msg)
 
