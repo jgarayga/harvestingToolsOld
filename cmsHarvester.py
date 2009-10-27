@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "1.7.5"
+__version__ = "1.7.6"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
