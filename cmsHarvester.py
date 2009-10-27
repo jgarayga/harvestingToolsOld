@@ -1314,12 +1314,6 @@ class CMSHarvester(object):
                 if status != 0:
                     # Path does not exist, let's try and create it.
                     self.logger.debug("Creating path `%s'" % path)
-                    # DEBUG DEBUG DEBUG
-                    # Checking shell mask for Stephen.
-                    cmd = "umask -S"
-                    (status, output) = commands.getstatusoutput(cmd)
-                    pdb.set_trace()
-                    # DEBUG DEBUG DEBUG end
                     cmd = "rfmkdir %s" % path
                     (status, output) = commands.getstatusoutput(cmd)
                     if status != 0:
