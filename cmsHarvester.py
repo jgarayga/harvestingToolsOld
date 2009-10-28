@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "1.7.7"
+__version__ = "1.7.8"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1318,7 +1318,7 @@ class CMSHarvester(object):
                 if status != 0:
                     # Path does not exist, let's try and create it.
                     self.logger.debug("Creating path `%s'" % path)
-                    cmd = "rfmkdir %s" % path
+                    cmd = "nsmkdir %s" % path
                     (status, output) = commands.getstatusoutput(cmd)
                     if status != 0:
                         msg = "Could not create directory `%s'" % path
