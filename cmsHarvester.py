@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091021
+## Last change: 20091028
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "1.7.6"
+__version__ = "1.7.7"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -110,7 +110,11 @@ from Configuration.PyReleaseValidation.ConfigBuilder import \
 #import FWCore.ParameterSet.Config as cms
 
 # Debugging stuff.
-import pdb
+try:
+    import debug_hook
+    import pdb
+except ImportError:
+    pass
 
 ###########################################################################
 ## Helper class: Usage exception.
@@ -2737,16 +2741,20 @@ class CMSHarvester(object):
             self.logger.info("Reading input from list file `%s'" % \
                              input_name)
             try:
-                listfile = open(self.input_name, "r")
+                listfile = open(input_name, "r")
                 for dataset in listfile:
+                    # Skip empty lines.
+                    dataset_stripped = dataset.strip()
+                    if len(dataset_stripped) < 1:
+                        continue
                     # Skip lines starting with a `#'.
-                    if dataset.strip()[0] != "#":
+                    if dataset_stripped[0] != "#":
                         dataset_names.extend(self. \
                                              dbs_resolve_dataset_name(dataset))
                 listfile.close()
             except IOError:
                 msg = "ERROR: Could not open input list file `%s'" % \
-                      self.input_name
+                      input_name
                 self.logger.fatal(msg)
                 raise Error(msg)
         else:
