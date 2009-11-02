@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091028
+## Last change: 20091102
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -3590,6 +3590,16 @@ class CMSHarvester(object):
             globaltag = globaltag[:-5]
 
         connect_name = self.frontier_connection_name
+        # BUG BUG BUG
+        # There is a bug in cmscond_tagtree_list: some magic is
+        # missing from the implementation requiring one to specify
+        # explicitly the name of the squid to connect to. Since the
+        # cmsHarvester can only be run from the CERN network anyway,
+        # cmsfrontier:8000 is hard-coded in here. Not nice but it
+        # works.
+        connect_name = connect_name.replace("frontier://",
+                                            "frontier://cmsfrontier:8000/")
+        # BUG BUG BUG end
         connect_name += "CMS_COND_31X_GLOBALTAG"
 
         self.logger.info("Checking existence of GlobalTag `%s'" % \
@@ -3613,7 +3623,7 @@ class CMSHarvester(object):
             tag_exists = False
         else:
             tag_exists = True
-        self.logger.debug("  GlobalTag exists? -> %s" % tag_exists)
+        self.logger.info("  GlobalTag exists? -> %s" % tag_exists)
 
         # End of check_globaltag.
         return tag_exists
@@ -3658,7 +3668,7 @@ class CMSHarvester(object):
             tag_exists = False
         else:
             tag_exists = True
-        self.logger.debug("  Reference histogram tag exists? -> %s" % tag_exists)
+        self.logger.info("  Reference histogram tag exists? -> %s" % tag_exists)
 
         # End of check_ref_hist_tag.
         return tag_exists
