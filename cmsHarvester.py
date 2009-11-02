@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "1.7.9"
+__version__ = "2.0.0"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -137,7 +137,7 @@ class Error(Exception):
         return repr(self.msg)
 
 ###########################################################################
-## CMSHarvesterHelpFormatter class.
+## Helper class: CMSHarvesterHelpFormatter.
 ###########################################################################
 
 class CMSHarvesterHelpFormatter(optparse.IndentedHelpFormatter):
@@ -170,6 +170,75 @@ class CMSHarvesterHelpFormatter(optparse.IndentedHelpFormatter):
         return formatted_usage
 
     # End of CMSHarvesterHelpFormatter.
+
+###########################################################################
+## Helper class: DBSXMLHandler.
+###########################################################################
+
+class DBSXMLHandler(xml.sax.handler.ContentHandler):
+    """XML handler class to parse DBS results.
+
+    The tricky thing here is that older DBS versions (2.0.5 and
+    earlier) return results in a different XML format than newer
+    versions. Previously the result values were returned as attributes
+    to the `result' element. The new approach returns result values as
+    contents of named elements.
+
+    The old approach is handled directly in startElement(), the new
+    approach in characters().
+
+    NOTE: All results are returned in the form of string values of
+          course!
+
+    """
+
+    # This is the required mapping from the name of the variable we
+    # ask for to what we call it ourselves. (Effectively this is the
+    # mapping between the old attribute key name and the new element
+    # name.)
+    mapping = {
+        "dataset"        : "PATH",
+        "dataset.tag"    : "PROCESSEDDATASET_GLOBALTAG",
+        "datatype.type"  : "PRIMARYDSTYPE_TYPE",
+        "run"            : "RUNS_RUNNUMBER",
+        "run.number"     : "RUNS_RUNNUMBER",
+        "file.name"      : "FILES_LOGICALFILENAME",
+        "file.numevents" : "FILES_NUMBEROFEVENTS",
+        "algo.version"   : "APPVERSION_VERSION",
+        "site"           : "STORAGEELEMENT_SENAME",
+        }
+
+    def __init__(self, tag_names):
+        self.current_element = None
+        self.tag_names = tag_names
+        self.results = {}
+
+    def startElement(self, name, attrs):
+        self.current_element = name
+
+        # This is to catch results from DBS 2.0.5 and earlier.
+        if name == "result":
+            for name in self.tag_names:
+                key = DBSXMLHandler.mapping[name]
+                value = str(attrs[key])
+                try:
+                    self.results[name].append(value)
+                except KeyError:
+                    self.results[name] = [value]
+
+    def endElement(self, name):
+        self.current_element = None
+
+    def characters(self, content):
+        if self.current_element in self.tag_names:
+            print "DEBUG Found tag `%s'" % self.current_element
+            print "DEBUG   value: `%s'" % content
+            if self.results.has_key(self.current_element):
+                self.results[self.current_element].append(content)
+            else:
+                self.results[self.current_element] = [content]
+
+    # End of DBSXMLHandler.
 
 ###########################################################################
 ## CMSHarvester class.
@@ -1884,22 +1953,26 @@ class CMSHarvester(object):
                     dataset_name
         try:
             api_result = api.executeQuery(dbs_query)
-        except DbsApiException:
+        except DBSAPI.dbsApiException.DbsApiException:
             msg = "ERROR: Could not execute DBS query"
             self.logger.fatal(msg)
             raise Error(msg)
 
+        # Setup parsing.
+        handler = DBSXMLHandler(["dataset"])
+        parser = xml.sax.make_parser()
+        parser.setContentHandler(handler)
+
+        # Parse.
         try:
-            datasets = []
-            class Handler(xml.sax.handler.ContentHandler):
-                def startElement(self, name, attrs):
-                    if name == "result":
-                        datasets.append(str(attrs["PATH"]))
-            xml.sax.parseString(api_result, Handler())
+            xml.sax.parseString(api_result, handler)
         except SAXParseException:
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
+
+        # Extract the results.
+        datasets = handler.results.values()[0]
 
         # End of dbs_resolve_dataset_name.
         return datasets
@@ -1922,22 +1995,23 @@ class CMSHarvester(object):
                     dataset_name
         try:
             api_result = api.executeQuery(dbs_query)
-        except DbsApiException:
+        except DBSAPI.dbsApiException.DbsApiException:
             msg = "ERROR: Could not execute DBS query"
             self.logger.fatal(msg)
             raise Error(msg)
 
+        handler = DBSXMLHandler(["algo.version"])
+        parser = xml.sax.make_parser()
+        parser.setContentHandler(handler)
+
         try:
-            cmssw_version = []
-            class Handler(xml.sax.handler.ContentHandler):
-                def startElement(self, name, attrs):
-                    if name == "result":
-                        cmssw_version.append(str(attrs["APPVERSION_VERSION"]))
-            xml.sax.parseString(api_result, Handler())
+            xml.sax.parseString(api_result, handler)
         except SAXParseException:
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
+
+        cmssw_version = handler.results.values()[0]
 
         # DEBUG DEBUG DEBUG
         assert len(cmssw_version) == 1
@@ -2023,23 +2097,25 @@ class CMSHarvester(object):
                     dataset_name
         try:
             api_result = api.executeQuery(dbs_query)
-        except DbsApiException:
+        except DBSAPI.dbsApiException.DbsApiException:
             msg = "ERROR: Could not execute DBS query"
             self.logger.fatal(msg)
             raise Error(msg)
 
+        handler = DBSXMLHandler(["run"])
+        parser = xml.sax.make_parser()
+        parser.setContentHandler(handler)
+
         try:
-            runs = []
-            class Handler(xml.sax.handler.ContentHandler):
-                def startElement(self, name, attrs):
-                    if name == "result":
-                        runs.append(int(attrs["RUNS_RUNNUMBER"]))
-            xml.sax.parseString(api_result, Handler())
+            xml.sax.parseString(api_result, handler)
         except SAXParseException:
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
 
+        runs = handler.results.values()[0]
+        # Turn strings into integers.
+        runs = [int(i) for i in runs]
         runs.sort()
 
         # End of dbs_resolve_runs.
@@ -2070,22 +2146,23 @@ class CMSHarvester(object):
                     dataset_name
         try:
             api_result = api.executeQuery(dbs_query)
-        except DbsApiException:
+        except DBSAPI.dbsApiException.DbsApiException:
             msg = "ERROR: Could not execute DBS query"
             self.logger.fatal(msg)
             raise Error(msg)
 
+        handler = DBSXMLHandler(["dataset.tag"])
+        parser = xml.sax.make_parser()
+        parser.setContentHandler(parser)
+
         try:
-            globaltag = []
-            class Handler(xml.sax.handler.ContentHandler):
-                def startElement(self, name, attrs):
-                    if name == "result":
-                        globaltag.append(str(attrs["PROCESSEDDATASET_GLOBALTAG"]))
-            xml.sax.parseString(api_result, Handler())
+            xml.sax.parseString(api_result, handler)
         except SAXParseException:
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
+
+        globaltag = handler.results.values()[0]
 
         # DEBUG DEBUG DEBUG
         assert len(globaltag) == 1
@@ -2115,22 +2192,23 @@ class CMSHarvester(object):
                     dataset_name
         try:
             api_result = api.executeQuery(dbs_query)
-        except DbsApiException:
+        except DBSAPI.dbsApiException.DbsApiException:
             msg = "ERROR: Could not execute DBS query"
             self.logger.fatal(msg)
             raise Error(msg)
 
+        handler = DBSXMLHandler(["datatype.type"])
+        parser = xml.sax.make_parser()
+        parser.setContentHandler(handler)
+
         try:
-            datatype = []
-            class Handler(xml.sax.handler.ContentHandler):
-                def startElement(self, name, attrs):
-                    if name == "result":
-                        datatype.append(str(attrs["PRIMARYDSTYPE_TYPE"]))
-            xml.sax.parseString(api_result, Handler())
+            xml.sax.parseString(api_result, handler)
         except SAXParseException:
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
+
+        datatype = handler.results.values()[0]
 
         # DEBUG DEBUG DEBUG
         assert len(datatype) == 1
@@ -2142,6 +2220,9 @@ class CMSHarvester(object):
         return datatype
 
     ##########
+
+    # OBSOLETE OBSOLETE OBSOLETE
+    # This method is no longer used.
 
     def dbs_resolve_number_of_events(self, dataset_name, run_number=None):
         """Determine the number of events in a given dataset (and run).
@@ -2171,29 +2252,28 @@ class CMSHarvester(object):
             dbs_query = dbq_query + (" and run = %d" % run_number)
         try:
             api_result = api.executeQuery(dbs_query)
-        except DbsApiException:
+        except DBSAPI.dbsApiException.DbsApiException:
             msg = "ERROR: Could not execute DBS query"
             self.logger.fatal(msg)
             raise Error(msg)
 
+        handler = DBSXMLHandler(["file.name", "file.numevents"])
+        parser = xml.sax.make_parser()
+        parser.setContentHandler(handler)
+
         try:
-            files_info = {}
-            class Handler(xml.sax.handler.ContentHandler):
-                def startElement(self, name, attrs):
-                    if name == "result":
-                        file_name = str(attrs["FILES_LOGICALFILENAME"])
-                        nevents = int(attrs["FILES_NUMBEROFEVENTS"])
-                        files_info[file_name] = nevents
-            xml.sax.parseString(api_result, Handler())
+            xml.sax.parseString(api_result, handler)
         except SAXParseException:
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
 
-        num_events = sum(files_info.values())
+        num_events = sum(handler.results["file.numevents"])
 
         # End of dbs_resolve_number_of_events.
         return num_events
+
+    # OBSOLETE OBSOLETE OBSOLETE end
 
     ##########
 
@@ -2503,56 +2583,100 @@ class CMSHarvester(object):
                     dataset_name
         try:
             api_result = api.executeQuery(dbs_query)
-        except DbsApiException:
+        except DBSAPI.dbsApiException.DbsApiException:
             msg = "ERROR: Could not execute DBS query"
             self.logger.fatal(msg)
             raise Error(msg)
 
+        handler = DBSXMLHandler(["run.number", "site", "file.name", "file.numevents"])
+        parser = xml.sax.make_parser()
+        parser.setContentHandler(handler)
+
         try:
-            files_info = {}
-            class Handler(xml.sax.handler.ContentHandler):
-                def startElement(self, name, attrs):
-                    if name == "result":
-                        site_name = str(attrs["STORAGEELEMENT_SENAME"])
-                        # TODO TODO TODO
-                        # Ugly hack to get around cases like this:
-                        #   $ dbs search --query="find dataset, site, file.count where dataset=/RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO"
-                        #   Using DBS instance at: http://cmsdbsprod.cern.ch/cms_dbs_prod_global/servlet/DBSServlet
-                        #   Processing ... \
-                        #   PATH    STORAGEELEMENT_SENAME   COUNT_FILES
-                        #   _________________________________________________________________________________
-                        #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO          1
-                        #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO  cmssrm.fnal.gov 12
-                        #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO  srm-cms.cern.ch 12
-                        if len(site_name) < 1:
-                            return
-                        # TODO TODO TODO end
-                        run_number = int(attrs["RUNS_RUNNUMBER"])
-                        file_name = str(attrs["FILES_LOGICALFILENAME"])
-                        nevents = int(attrs["FILES_NUMBEROFEVENTS"])
-                        # I know, this is a bit of a kludge.
-                        if not files_info.has_key(run_number):
-                            # New run.
-                            files_info[run_number] = {}
-                            files_info[run_number][file_name] = (nevents,
-                                                                 [site_name])
-                        elif not files_info[run_number].has_key(file_name):
-                            # New file for a known run.
-                            files_info[run_number][file_name] = (nevents,
-                                                                 [site_name])
-                        else:
-                            # New entry for a known file for a known run.
-                            # DEBUG DEBUG DEBUG
-                            # Each file should have the same number of
-                            # events independent of the site it's at.
-                            assert nevents == files_info[run_number][file_name][0]
-                            # DEBUG DEBUG DEBUG end
-                            files_info[run_number][file_name][1].append(site_name)
-            xml.sax.parseString(api_result, Handler())
+            # OBSOLETE OBSOLETE OBSOLETE
+##            class Handler(xml.sax.handler.ContentHandler):
+##                def startElement(self, name, attrs):
+##                    if name == "result":
+##                        site_name = str(attrs["STORAGEELEMENT_SENAME"])
+##                        # TODO TODO TODO
+##                        # Ugly hack to get around cases like this:
+##                        #   $ dbs search --query="find dataset, site, file.count where dataset=/RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO"
+##                        #   Using DBS instance at: http://cmsdbsprod.cern.ch/cms_dbs_prod_global/servlet/DBSServlet
+##                        #   Processing ... \
+##                        #   PATH    STORAGEELEMENT_SENAME   COUNT_FILES
+##                        #   _________________________________________________________________________________
+##                        #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO          1
+##                        #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO  cmssrm.fnal.gov 12
+##                        #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO  srm-cms.cern.ch 12
+##                        if len(site_name) < 1:
+##                            return
+##                        # TODO TODO TODO end
+##                        run_number = int(attrs["RUNS_RUNNUMBER"])
+##                        file_name = str(attrs["FILES_LOGICALFILENAME"])
+##                        nevents = int(attrs["FILES_NUMBEROFEVENTS"])
+##                        # I know, this is a bit of a kludge.
+##                        if not files_info.has_key(run_number):
+##                            # New run.
+##                            files_info[run_number] = {}
+##                            files_info[run_number][file_name] = (nevents,
+##                                                                 [site_name])
+##                        elif not files_info[run_number].has_key(file_name):
+##                            # New file for a known run.
+##                            files_info[run_number][file_name] = (nevents,
+##                                                                 [site_name])
+##                        else:
+##                            # New entry for a known file for a known run.
+##                            # DEBUG DEBUG DEBUG
+##                            # Each file should have the same number of
+##                            # events independent of the site it's at.
+##                            assert nevents == files_info[run_number][file_name][0]
+##                            # DEBUG DEBUG DEBUG end
+##                            files_info[run_number][file_name][1].append(site_name)
+            # OBSOLETE OBSOLETE OBSOLETE end
+            xml.sax.parseString(api_result, handler)
         except SAXParseException:
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
+
+        # Now reshuffle all results a bit so we can more easily use
+        # them later on. (Remember that all arrays in the results
+        # should have equal length.)
+        files_info = {}
+        for (index, site_name) in enumerate(handler.results["site"]):
+            # Ugly hack to get around cases like this:
+            #   $ dbs search --query="find dataset, site, file.count where dataset=/RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO"
+            #   Using DBS instance at: http://cmsdbsprod.cern.ch/cms_dbs_prod_global/servlet/DBSServlet
+            #   Processing ... \
+            #   PATH    STORAGEELEMENT_SENAME   COUNT_FILES
+            #   _________________________________________________________________________________
+            #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO          1
+            #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO  cmssrm.fnal.gov 12
+            #   /RelValQCD_Pt_3000_3500/CMSSW_3_3_0_pre1-STARTUP31X_V4-v1/GEN-SIM-RECO  srm-cms.cern.ch 12
+            if len(site_name) < 1:
+                continue
+            run_number = int(handler.results["run.number"][index])
+            file_name = handler.results["file.name"][index]
+            nevents = int(handler.results["file.numevents"][index])
+
+            # I know, this is a bit of a kludge.
+            if not files_info.has_key(run_number):
+                # New run.
+                files_info[run_number] = {}
+                files_info[run_number][file_name] = (nevents,
+                                                     [site_name])
+            elif not files_info[run_number].has_key(file_name):
+                # New file for a known run.
+                files_info[run_number][file_name] = (nevents,
+                                                     [site_name])
+            else:
+                # New entry for a known file for a known run.
+                # DEBUG DEBUG DEBUG
+                # Each file should have the same number of
+                # events independent of the site it's at.
+                assert nevents == files_info[run_number][file_name][0]
+                # DEBUG DEBUG DEBUG end
+                files_info[run_number][file_name][1].append(site_name)
 
         # Remove any information for files that are not available
         # anywhere. NOTE: After introducing the ugly hack above, this
@@ -4320,7 +4444,8 @@ class CMSHarvester(object):
                 # This should never happen after the DBS checks.
                 self.logger.warning("  --> skipping dataset "
                                     "without any runs")
-                assert False
+                assert False, "Panic: found a dataset without runs " \
+                       "after DBS checks!"
                 # DEBUG DEBUG DEBUG end
 
             cmssw_version = self.dbs_resolve_cmssw_version(dataset_name)
