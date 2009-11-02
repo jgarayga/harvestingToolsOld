@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -257,6 +257,25 @@ class DBSXMLHandler(xml.sax.handler.ContentHandler):
 
     def current_element(self):
         return self.element_position[-1]
+
+    def check_results_validity(self):
+        """Make sure that all results arrays have equal length.
+
+        We should have received complete rows from DBS. I.e. all
+        results arrays in the handler should be of equal length.
+
+        """
+
+        results_valid = True
+
+        res_names = self.results.keys()
+        if len(res_names) > 1:
+            for res_name in res_names[1:]:
+                res_tmp = self.results[res_name]
+                if len(res_tmp) != len(self.results[res_names[0]]):
+                    results_valid = False
+
+        return results_valid
 
     # End of DBSXMLHandler.
 
@@ -1991,6 +2010,10 @@ class CMSHarvester(object):
             self.logger.fatal(msg)
             raise Error(msg)
 
+        # DEBUG DEBUG DEBUG
+        assert(handler.check_results_validity()), "ERROR The DBSXMLHandler screwed something up!"
+        # DEBUG DEBUG DEBUG end
+
         # Extract the results.
         datasets = handler.results.values()[0]
 
@@ -2030,6 +2053,10 @@ class CMSHarvester(object):
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
+
+        # DEBUG DEBUG DEBUG
+        assert(handler.check_results_validity()), "ERROR The DBSXMLHandler screwed something up!"
+        # DEBUG DEBUG DEBUG end
 
         cmssw_version = handler.results.values()[0]
 
@@ -2133,6 +2160,10 @@ class CMSHarvester(object):
             self.logger.fatal(msg)
             raise Error(msg)
 
+        # DEBUG DEBUG DEBUG
+        assert(handler.check_results_validity()), "ERROR The DBSXMLHandler screwed something up!"
+        # DEBUG DEBUG DEBUG end
+
         runs = handler.results.values()[0]
         # Turn strings into integers.
         runs = [int(i) for i in runs]
@@ -2182,6 +2213,10 @@ class CMSHarvester(object):
             self.logger.fatal(msg)
             raise Error(msg)
 
+        # DEBUG DEBUG DEBUG
+        assert(handler.check_results_validity()), "ERROR The DBSXMLHandler screwed something up!"
+        # DEBUG DEBUG DEBUG end
+
         globaltag = handler.results.values()[0]
 
         # DEBUG DEBUG DEBUG
@@ -2227,6 +2262,10 @@ class CMSHarvester(object):
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
+
+        # DEBUG DEBUG DEBUG
+        assert(handler.check_results_validity()), "ERROR The DBSXMLHandler screwed something up!"
+        # DEBUG DEBUG DEBUG end
 
         datatype = handler.results.values()[0]
 
@@ -2287,6 +2326,10 @@ class CMSHarvester(object):
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
+
+        # DEBUG DEBUG DEBUG
+        assert(handler.check_results_validity()), "ERROR The DBSXMLHandler screwed something up!"
+        # DEBUG DEBUG DEBUG end
 
         num_events = sum(handler.results["file.numevents"])
 
@@ -2660,14 +2703,7 @@ class CMSHarvester(object):
             raise Error(msg)
 
         # DEBUG DEBUG DEBUG
-        # We should have received complete rows from DBS. I.e. all
-        # results arrays in the handler should be of equal length.
-        res_names = handler.results.keys()
-        if len(res_names) > 1:
-            for res_name in res_names[1:]:
-                res_tmp = handler.results[res_name]
-                assert len(res_tmp) == len(handler.results[res_names[0]]), \
-                       "ERROR The DBSXMLHandler screwed something up!"
+        assert(handler.check_results_validity()), "ERROR The DBSXMLHandler screwed something up!"
         # DEBUG DEBUG DEBUG end
 
         # Now reshuffle all results a bit so we can more easily use
