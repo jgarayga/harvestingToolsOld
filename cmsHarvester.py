@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -953,12 +953,11 @@ class CMSHarvester(object):
 
         print "`RelVal' maps to:"
         print "  pre-3_3_0           : HARVESTING:validationHarvesting"
-        print "  3_3_0_pre1-4        : HARVESTING:validationHarvesting"
-        print "  3_3_0_pre5          : HARVESTING:validationHarvesting+dqmHarvesting"
-        print "  3_3_0_pre6          : HARVESTING:validationHarvesting"
-        print "  3_3_0               : HARVESTING:validationHarvesting+dqmHarvesting"
-        print "  3_4_0_pre1          : HARVESTING:validationHarvesting"
         print "  3_4_0_pre2 and later: HARVESTING:validationHarvesting+dqmHarvesting"
+        print "  Exceptions:"
+        print "    3_3_0_pre1-4        : HARVESTING:validationHarvesting"
+        print "    3_3_0_pre6          : HARVESTING:validationHarvesting"
+        print "    3_4_0_pre1          : HARVESTING:validationHarvesting"
 
         print sep_line_short
 
@@ -969,12 +968,11 @@ class CMSHarvester(object):
 
         print "`Preproduction' maps to:"
         print "  pre-3_3_0           : HARVESTING:validationprodHarvesting"
-        print "  3_3_0_pre1-4        : HARVESTING:validationprodHarvesting"
-        print "  3_3_0_pre5          : HARVESTING:validationpreprodHarvesting+dqmHarvestingPOG"
-        print "  3_3_0_pre6          : HARVESTING:validationprodHarvesting"
-        print "  3_3_0               : HARVESTING:validationpreprodHarvesting+dqmHarvestingPOG"
-        print "  3_4_0_pre1          : HARVESTING:validationprodHarvesting"
         print "  3_4_0_pre2 and later: HARVESTING:validationpreprodHarvesting+dqmHarvestingPOG"
+        print "  Exceptions:"
+        print "    3_3_0_pre1-4        : HARVESTING:validationprodHarvesting"
+        print "    3_3_0_pre6          : HARVESTING:validationprodHarvesting"
+        print "    3_4_0_pre1          : HARVESTING:validationprodHarvesting"
 
         print sep_line_short
 
@@ -1051,15 +1049,12 @@ class CMSHarvester(object):
         step_string = None
         if version < "3_3_0":
             step_string = "validationHarvesting"
-        elif version >= "3_4_0_pre2":
-            step_string = "validationHarvesting+dqmHarvesting"
+        elif version in ["3_3_0_pre1", "3_3_0_pre2",
+                         "3_3_0_pre3", "3_3_0_pre4",
+                         "3_3_0_pre6", "3_4_0_pre1"]:
+            step_string = "validationHarvesting"
         else:
-            if version in ["3_3_0_pre1", "3_3_0_pre2",
-                           "3_3_0_pre3", "3_3_0_pre4",
-                           "3_3_0_pre6", "3_4_0_pre1"]:
-                step_string = "validationHarvesting"
-            elif version in ["3_3_0_pre5", "3_3_0"]:
-                step_string = "validationHarvesting+dqmHarvesting"
+            step_string = "validationHarvesting+dqmHarvesting"
 
         harvesting_info["RelVal"]["step_string"] = step_string
 
@@ -1083,15 +1078,12 @@ class CMSHarvester(object):
         step_string = None
         if version < "3_3_0":
             step_string = "validationprodHarvesting"
-        elif version >= "3_4_0_pre2":
-            step_string = "validationpreprodHarvesting+dqmHarvestingPOG"
+        elif version in ["3_3_0_pre1", "3_3_0_pre2",
+                         "3_3_0_pre3", "3_3_0_pre4",
+                         "3_3_0_pre6", "3_4_0_pre1"]:
+            step_string = "validationprodHarvesting"
         else:
-            if version in ["3_3_0_pre1", "3_3_0_pre2",
-                           "3_3_0_pre3", "3_3_0_pre4",
-                           "3_3_0_pre6", "3_4_0_pre1"]:
-                step_string = "validationprodHarvesting"
-            elif version in ["3_3_0_pre5", "3_3_0"]:
-                step_string = "validationpreprodHarvesting+dqmHarvestingPOG"
+            step_string = "validationpreprodHarvesting+dqmHarvestingPOG"
 
         harvesting_info["Preproduction"]["step_string"] = step_string
 
