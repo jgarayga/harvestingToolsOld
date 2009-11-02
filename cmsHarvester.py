@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -209,12 +209,18 @@ class DBSXMLHandler(xml.sax.handler.ContentHandler):
         }
 
     def __init__(self, tag_names):
-        self.current_element = None
+        # This is a list used as stack to keep track of where we are
+        # in the element tree.
+        self.element_position = []
         self.tag_names = tag_names
         self.results = {}
 
     def startElement(self, name, attrs):
-        self.current_element = name
+        self.element_position.append(name)
+
+        self.current_value = []
+
+        #----------
 
         # This is to catch results from DBS 2.0.5 and earlier.
         if name == "result":
@@ -226,17 +232,31 @@ class DBSXMLHandler(xml.sax.handler.ContentHandler):
                 except KeyError:
                     self.results[name] = [value]
 
+        #----------
+
     def endElement(self, name):
-        self.current_element = None
+        assert self.current_element() == name, \
+               "closing unopenend element `%s'" % name
+
+        if self.current_element() in self.tag_names:
+            contents = "".join(self.current_value)
+            if self.results.has_key(self.current_element()):
+                self.results[self.current_element()].append(contents)
+            else:
+                self.results[self.current_element()] = [contents]
+
+        self.element_position.pop()
 
     def characters(self, content):
-        if self.current_element in self.tag_names:
-            print "DEBUG Found tag `%s'" % self.current_element
-            print "DEBUG   value: `%s'" % content
-            if self.results.has_key(self.current_element):
-                self.results[self.current_element].append(content)
-            else:
-                self.results[self.current_element] = [content]
+        # NOTE: It is possible that the actual contents of the tag
+        # gets split into multiple pieces. This method will be called
+        # for each of the pieces. This means we have to concatenate
+        # everything ourselves.
+        if self.current_element() in self.tag_names:
+            self.current_value.append(content)
+
+    def current_element(self):
+        return self.element_position[-1]
 
     # End of DBSXMLHandler.
 
@@ -2638,6 +2658,17 @@ class CMSHarvester(object):
             msg = "ERROR: Could not parse DBS server output"
             self.logger.fatal(msg)
             raise Error(msg)
+
+        # DEBUG DEBUG DEBUG
+        # We should have received complete rows from DBS. I.e. all
+        # results arrays in the handler should be of equal length.
+        res_names = handler.results.keys()
+        if len(res_names) > 1:
+            for res_name in res_names[1:]:
+                res_tmp = handler.results[res_name]
+                assert len(res_tmp) == len(handler.results[res_names[0]]), \
+                       "ERROR The DBSXMLHandler screwed something up!"
+        # DEBUG DEBUG DEBUG end
 
         # Now reshuffle all results a bit so we can more easily use
         # them later on. (Remember that all arrays in the results
