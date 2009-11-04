@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091102
+## Last change: 20091104
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.0.3"
+__version__ = "2.0.4"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -4037,9 +4037,17 @@ class CMSHarvester(object):
         use_refs = use_refs and self.use_ref_hists
 
         if not use_refs:
-            # TODO TODO TODO
-            # Disable reference histograms explicitly.
-            # TODO TODO TODO end
+            # Disable reference histograms explicitly. The histograms
+            # are loaded by the dqmRefHistoRootFileGetter
+            # EDAnalyzer. This analyzer can be run from several
+            # sequences. Here we remove it from each sequence that
+            # exists.
+            customisations.append("print \"Not using reference histograms\"")
+            customisations.append("if hasattr(process, \"dqmRefHistoRootFileGetter\"):")
+            customisations.append("    for (sequence_name, sequence) in process.sequences.iteritems():")
+            customisations.append("        if sequence.remove(process.dqmRefHistoRootFileGetter):")
+            customisations.append("            print \"Removed process.dqmRefHistoRootFileGetter from sequence `%s'\" % \\")
+            customisations.append("                  sequence_name")
             customisations.append("process.dqmSaver.referenceHandling = \"skip\"")
         else:
             # This makes sure all reference histograms are saved to
