@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.0.5"
+__version__ = "2.0.6"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1506,7 +1506,7 @@ class CMSHarvester(object):
         # become waaaay toooo sloooooow. So that's what the
         # sites_and_versions_cache does.
 
-        site_name = None
+        site_name = "no_matching_site_found"
         cmd = None
         while len(sites) > 0 and \
               site_name is None:
@@ -3046,7 +3046,7 @@ class CMSHarvester(object):
             if dataset_name in self.datasets_to_ignore.keys():
                 del dataset_names_filtered[dataset_name]
 
-        self.logger.info("  --> Removed %d datasets" % \
+        self.logger.info("  --> Removed %d dataset(s)" % \
                          (len(self.datasets_to_use) -
                           len(dataset_names_filtered)))
 
@@ -3100,10 +3100,11 @@ class CMSHarvester(object):
                 if len(dataset_names_filtered[dataset_name]) < 1:
                     del dataset_names_filtered[dataset_name]
 
-        self.logger.info("  --> Removed %d datasets" % \
+        self.logger.info("  --> Removed %d dataset(s) that I " \
+                         "(think I) already processed previously" % \
                          (len(self.datasets_to_use) -
                           len(dataset_names_filtered)))
-        self.logger.debug("      (removed %d runs)" % nruns_removed)
+        self.logger.debug("      (removed %d run(s))" % nruns_removed)
 
         self.datasets_to_use = dataset_names_filtered
 
@@ -3290,7 +3291,7 @@ class CMSHarvester(object):
                         dataset_names_after_checks[dataset_name].remove(run_without_sites)
                     except KeyError:
                         pass
-                self.logger.warning("  removed %d unavailable runs " \
+                self.logger.warning("  removed %d unavailable run(s) " \
                                     "from dataset `%s'" % \
                                     (len(runs_without_sites), dataset_name))
                 self.logger.debug("    (%s)" % \
@@ -3365,7 +3366,7 @@ class CMSHarvester(object):
                         dataset_names_after_checks[dataset_name].remove(empty_run)
                     except KeyError:
                         pass
-                self.logger.info("  removed %d empty runs from dataset `%s'" % \
+                self.logger.info("  removed %d empty run(s) from dataset `%s'" % \
                                  (len(empty_runs), dataset_name))
                 self.logger.debug("    (%s)" % \
                                   ", ".join([str(i) for i in empty_runs]))
@@ -3391,7 +3392,7 @@ class CMSHarvester(object):
 
         ###
 
-        self.logger.warning("  --> Removed %d datasets" % \
+        self.logger.warning("  --> Removed %d dataset(s)" % \
                             (len(self.datasets_to_use) -
                              len(dataset_names_after_checks)))
 
