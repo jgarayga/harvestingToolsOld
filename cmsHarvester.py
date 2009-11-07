@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091104
+## Last change: 20091107
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.0.4"
+__version__ = "2.0.5"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1531,11 +1531,14 @@ class CMSHarvester(object):
                                  (se_name, cmssw_version))
                 self.sites_and_versions_cache[se_name] = {}
 
+                scram_arch = os.getenv("SCRAM_ARCH")
                 cmd = "lcg-info --list-ce " \
-                      "--query 'Tag=VO-cms-%s," \
+                      "--query '" \
+                      "Tag=VO-cms-%s," \
+                      "Tag=VO-cms-%s," \
                       "CEStatus=Production," \
                       "CloseSE=%s'" % \
-                      (cmssw_version, se_name)
+                      (cmssw_version, scram_arch, se_name)
                 (status, output) = commands.getstatusoutput(cmd)
                 if status != 0:
                     self.logger.error("Could not check site information " \
@@ -1552,7 +1555,7 @@ class CMSHarvester(object):
 
         if site_name is None:
             self.logger.error("  --> no matching site found")
-            if not command is None:
+            if not cmd is None:
                 self.logger.debug("      (command used: `%s')" % cmd)
         else:
             self.logger.debug("  --> selected site `%s'" % site_name)
