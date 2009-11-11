@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091107
+## Last change: 20091111
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.0.6"
+__version__ = "2.0.7"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1403,6 +1403,14 @@ class CMSHarvester(object):
             # - all directories above that should (at least) have
             #   permissions 755.
 
+            # BUT: Even though the above permissions are the usual
+            # ones to used when setting up CASTOR areas for grid job
+            # output, there is one caveat in case multiple people are
+            # working in the same CASTOR area. If user X creates
+            # /a/b/c/ and user Y wants to create /a/b/d/ he/she does
+            # not have sufficient rights. So: we set all dir
+            # permissions to 775 to avoid this.
+
             if not skip_this_path_piece:
 
                 # Ok, first thing: let's make sure this directory
@@ -1457,7 +1465,7 @@ class CMSHarvester(object):
                     permissions_target = "775"
                 else:
                     # `Only' an intermediate directory.
-                    permissions_target = "755"
+                    permissions_target = "775"
 
                 # Compare permissions.
                 permissions_new = []
