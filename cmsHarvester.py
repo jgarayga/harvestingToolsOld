@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.0.9"
+__version__ = "2.1.0"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -410,6 +410,12 @@ class CMSHarvester(object):
         # NOTE: Make sure this one starts with a `/'.
         self.castor_prefix = "/castor/cern.ch"
 
+        # Normally the central harvesting should be done using the
+        # `t1access' grid role. To be able to run without T1 access
+        # the --no-t1access flag can be used. This variable keeps
+        # track of that special mode.
+        self.non_t1access = False
+
         # This will become the list of datasets and runs to consider
         self.datasets_to_use = {}
         # and this will become the list of datasets and runs to skip.
@@ -419,6 +425,13 @@ class CMSHarvester(object):
 
         # Cache for CMSSW version availability at different sites.
         self.sites_and_versions_cache = {}
+
+        # Global flag to see if there were any jobs for which we could
+        # not find a matching site.
+        self.all_sites_found = True
+
+        # Helper string centrally defined.
+        self.no_matching_site_found_str = "no_matching_site_found"
 
         # Store command line options for later use.
         if cmd_line_opts is None:
@@ -926,6 +939,23 @@ class CMSHarvester(object):
                          self.castor_base_dir)
 
         # End of option_handler_castor_dir.
+
+    ##########
+
+    def option_handler_no_t1access(self, option, opt_str, value, parser):
+        """Set the self.no_t1access flag to try and create jobs that
+        run without special `t1access' role.
+
+        """
+
+        self.non_t1access = True
+
+        self.logger.warning("Running in `non-t1access' mode. " \
+                            "Will try to create jobs that run " \
+                            "without special rights but no " \
+                            "further promises...")
+
+        # End of option_handler_no_t1access.
 
     ##########
 
@@ -1507,6 +1537,25 @@ class CMSHarvester(object):
         # This is the T0.
         sites_forbidden = ["caf.cern.ch"]
 
+        # These are the T1 sites. These are only forbidden if we're
+        # running in non-T1 mode.
+        # Source:
+        #   https://cmsweb.cern.ch/sitedb/sitelist/?naming_scheme=ce
+        # Hard-coded, yes. Not nice, no.
+        if self.non_t1access:
+            sites_forbidden.extend([
+                "srm-cms.cern.ch",
+                "ccsrm.in2p3.fr",
+                "cmssrm-fzk.gridka.de",
+                "cmssrm.fnal.gov",
+                "gridka-dCache.fzk.de",
+                "srm-cms.gridpp.rl.ac.uk",
+                "srm.grid.sinica.edu.tw",
+                "srm2.grid.sinica.edu.tw",
+                "srmcms.pic.es",
+                "storm-fe-cms.cr.cnaf.infn.it",
+                ])
+
         for site in sites_forbidden:
             if site in sites:
                 sites.remove(site)
@@ -1515,7 +1564,7 @@ class CMSHarvester(object):
         # become waaaay toooo sloooooow. So that's what the
         # sites_and_versions_cache does.
 
-        site_name = "no_matching_site_found"
+        site_name = self.no_matching_site_found_str
         cmd = None
         while len(sites) > 0 and \
               site_name is None:
@@ -1562,12 +1611,23 @@ class CMSHarvester(object):
                         self.logger.debug("  --> rejecting site `%s'" % se_name)
                         sites.remove(se_name)
 
-        if site_name is None:
+        if site_name is self.no_matching_site_found_str:
             self.logger.error("  --> no matching site found")
+            self.logger.error("    --> Your release or SCRAM " \
+                              "architecture may not be available" \
+                              "anywhere on the (LCG) grid.")
             if not cmd is None:
                 self.logger.debug("      (command used: `%s')" % cmd)
         else:
             self.logger.debug("  --> selected site `%s'" % site_name)
+
+        # Return something more descriptive (than `None') in case we
+        # found nothing.
+        if site_name is None:
+            site_name = self.no_matching_site_found_str
+            # Keep track of our global flag signifying that this
+            # happened.
+            self.all_sites_found = False
 
         # End of pick_a_site.
         return site_name
@@ -1724,6 +1784,14 @@ class CMSHarvester(object):
                           callback=self.option_handler_castor_dir,
                           type="string",
                           metavar="CASTORDIR")
+
+        # Use this to try and create jobs that will run without
+        # special `t1access' role.
+        parser.add_option("", "--no-t1access",
+                          help="Try to create jobs that will run " \
+                          "without special `t1access' role",
+                          action="callback",
+                          callback=self.option_handler_no_t1access)
 
         # This is the command line flag to list all harvesting
         # type-to-sequence mappings.
@@ -3637,7 +3705,8 @@ class CMSHarvester(object):
         tmp.append("# This removes the default blacklisting of T1 sites.")
         tmp.append("remove_default_blacklist = 1")
         tmp.append("rb = CERN")
-        tmp.append("role = t1access")
+        if not self.non_t1access:
+            tmp.append("role = t1access")
         tmp.append("")
         tmp.append("[USER]")
         tmp.append("copy_data = 1")
@@ -4664,6 +4733,17 @@ class CMSHarvester(object):
         self.logger.info("  For more information please see the CMS Twiki:")
         self.logger.info("    %s" % twiki_url)
         self.logger.info(sep_line)
+
+        # If there were any jobs for which we could not find a
+        # matching site show a warning message about that.
+        if not self.all_sites_found:
+            self.logger.warning("  For some of the jobs no matching " \
+                                "site could be found")
+            self.logger.warning("  --> please scan your multicrab.cfg" \
+                                "for occurrences of `%s'." % \
+                                self.no_matching_site_found_str)
+            self.logger.warning("      You will have to fix those " \
+                                "by hand, sorry.")
 
         # End of show_exit_message.
 
