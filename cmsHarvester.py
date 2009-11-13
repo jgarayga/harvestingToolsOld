@@ -1462,10 +1462,10 @@ class CMSHarvester(object):
                 if piece_index == (len_castor_path_pieces - 1):
                     # This means we're looking at the final
                     # destination directory.
-                    permissions_target = "775"
+                    permissions_target = "755"
                 else:
                     # `Only' an intermediate directory.
-                    permissions_target = "775"
+                    permissions_target = "755"
 
                 # Compare permissions.
                 permissions_new = []
@@ -1514,7 +1514,7 @@ class CMSHarvester(object):
         # become waaaay toooo sloooooow. So that's what the
         # sites_and_versions_cache does.
 
-        site_name = "no_matching_site_found"
+        site_name = None
         cmd = None
         while len(sites) > 0 and \
               site_name is None:
@@ -1539,14 +1539,13 @@ class CMSHarvester(object):
                                  (se_name, cmssw_version))
                 self.sites_and_versions_cache[se_name] = {}
 
-                scram_arch = os.getenv("SCRAM_ARCH")
+#                scram_arch = os.getenv("SCRAM_ARCH")
                 cmd = "lcg-info --list-ce " \
                       "--query '" \
                       "Tag=VO-cms-%s," \
-                      "Tag=VO-cms-%s," \
                       "CEStatus=Production," \
                       "CloseSE=%s'" % \
-                      (cmssw_version, scram_arch, se_name)
+                      (cmssw_version, se_name)
                 (status, output) = commands.getstatusoutput(cmd)
                 if status != 0:
                     self.logger.error("Could not check site information " \
