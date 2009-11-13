@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.1.1"
+__version__ = "2.1.2"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1590,14 +1590,25 @@ class CMSHarvester(object):
                                  (se_name, cmssw_version))
                 self.sites_and_versions_cache[se_name] = {}
 
-                scram_arch = os.getenv("SCRAM_ARCH")
+                # TODO TODO TODO
+                # Test for SCRAM architecture removed as per request
+                # from Andreas.
+                # scram_arch = os.getenv("SCRAM_ARCH")
+                # cmd = "lcg-info --list-ce " \
+                #       "--query '" \
+                #       "Tag=VO-cms-%s," \
+                #       "Tag=VO-cms-%s," \
+                #       "CEStatus=Production," \
+                #       "CloseSE=%s'" % \
+                #       (cmssw_version, scram_arch, se_name)
+                # TODO TODO TODO end
+
                 cmd = "lcg-info --list-ce " \
                       "--query '" \
                       "Tag=VO-cms-%s," \
-                      "Tag=VO-cms-%s," \
                       "CEStatus=Production," \
                       "CloseSE=%s'" % \
-                      (cmssw_version, scram_arch, se_name)
+                      (cmssw_version, se_name)
                 (status, output) = commands.getstatusoutput(cmd)
                 if status != 0:
                     self.logger.error("Could not check site information " \
