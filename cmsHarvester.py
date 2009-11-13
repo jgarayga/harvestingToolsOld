@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.0.8"
+__version__ = "2.0.9"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -396,16 +396,9 @@ class CMSHarvester(object):
 
         # The base path of the output dir in CASTOR.
         self.castor_base_dir = None
-        # BUG BUG BUG
-        # To be fixed back in production version!
-        #self.castor_base_dir_default = "/castor/cern.ch/" \
-        #                               "cms/store/temp/" \
-        #                               "dqm/offline/harvesting_output/"
         self.castor_base_dir_default = "/castor/cern.ch/" \
                                        "cms/store/temp/" \
-                                       "dqm/offline/harvesting_output/" \
-                                       "tmp_jhegeman/"
-        # BUG BUG BUG end
+                                       "dqm/offline/harvesting_output/"
 
         # The name of the file to be used for book keeping: which
         # datasets, runs, etc. we have already processed.
