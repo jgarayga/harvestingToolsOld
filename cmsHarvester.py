@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1564,7 +1564,8 @@ class CMSHarvester(object):
         # become waaaay toooo sloooooow. So that's what the
         # sites_and_versions_cache does.
 
-        site_name = self.no_matching_site_found_str
+        # NOTE: Keep this set to None!
+        site_name = None
         cmd = None
         while len(sites) > 0 and \
               site_name is None:
