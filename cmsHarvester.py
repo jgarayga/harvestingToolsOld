@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091111
+## Last change: 20091113
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.0.7"
+__version__ = "2.0.8"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -396,9 +396,16 @@ class CMSHarvester(object):
 
         # The base path of the output dir in CASTOR.
         self.castor_base_dir = None
+        # BUG BUG BUG
+        # To be fixed back in production version!
+        #self.castor_base_dir_default = "/castor/cern.ch/" \
+        #                               "cms/store/temp/" \
+        #                               "dqm/offline/harvesting_output/"
         self.castor_base_dir_default = "/castor/cern.ch/" \
                                        "cms/store/temp/" \
-                                       "dqm/offline/harvesting_output/"
+                                       "dqm/offline/harvesting_output/" \
+                                       "tmp_jhegeman/"
+        # BUG BUG BUG end
 
         # The name of the file to be used for book keeping: which
         # datasets, runs, etc. we have already processed.
@@ -1342,7 +1349,8 @@ class CMSHarvester(object):
         # CASTOR prefix or something like that.
         # BUG BUG BUG end
         castor_paths_dont_touch = {
-            0: ["/", "castor", "cern.ch", "cms", "store", "user"],
+            0: ["/", "castor", "cern.ch", "cms", "store", "temp",
+                "dqm", "offline", "user"],
             -1: ["user", "store"]
             }
 
@@ -1462,10 +1470,10 @@ class CMSHarvester(object):
                 if piece_index == (len_castor_path_pieces - 1):
                     # This means we're looking at the final
                     # destination directory.
-                    permissions_target = "755"
+                    permissions_target = "775"
                 else:
                     # `Only' an intermediate directory.
-                    permissions_target = "755"
+                    permissions_target = "775"
 
                 # Compare permissions.
                 permissions_new = []
@@ -1514,7 +1522,7 @@ class CMSHarvester(object):
         # become waaaay toooo sloooooow. So that's what the
         # sites_and_versions_cache does.
 
-        site_name = None
+        site_name = "no_matching_site_found"
         cmd = None
         while len(sites) > 0 and \
               site_name is None:
@@ -1539,13 +1547,14 @@ class CMSHarvester(object):
                                  (se_name, cmssw_version))
                 self.sites_and_versions_cache[se_name] = {}
 
-#                scram_arch = os.getenv("SCRAM_ARCH")
+                scram_arch = os.getenv("SCRAM_ARCH")
                 cmd = "lcg-info --list-ce " \
                       "--query '" \
                       "Tag=VO-cms-%s," \
+                      "Tag=VO-cms-%s," \
                       "CEStatus=Production," \
                       "CloseSE=%s'" % \
-                      (cmssw_version, se_name)
+                      (cmssw_version, scram_arch, se_name)
                 (status, output) = commands.getstatusoutput(cmd)
                 if status != 0:
                     self.logger.error("Could not check site information " \
