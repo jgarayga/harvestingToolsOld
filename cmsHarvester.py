@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.2.0"
+__version__ = "2.2.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -1755,7 +1755,8 @@ class CMSHarvester(object):
         parser.add_option("", "--bookkeepingfile",
                           help="File to be used to keep track " \
                           "of which datasets and runs have " \
-                          "already been processed.",
+                          "already been processed. Default: `%s'." % \
+                          self.book_keeping_file_name_default,
                           action="callback",
                           callback=self.option_handler_book_keeping_file,
                           type="string",
@@ -1765,7 +1766,8 @@ class CMSHarvester(object):
         # reference histogram name mappings.
         parser.add_option("", "--refhistmappingfile",
                           help="File to be use for the reference " \
-                          "histogram mappings.",
+                          "histogram mappings. Default: `%s'." % \
+                          self.ref_hist_mappings_file_name_default,
                           action="callback",
                           callback=self.option_handler_ref_hist_mapping_file,
                           type="string",
