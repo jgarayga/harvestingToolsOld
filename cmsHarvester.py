@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.2.2"
+__version__ = "2.2.3"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -4511,8 +4511,8 @@ class CMSHarvester(object):
                               "understand:\n  %s" % mapping
                         self.logger.fatal(msg)
                         raise Error(msg)
-                    dataset_name = mapping_pieces[0]
-                    ref_hist_name = mapping_pieces[1]
+                    dataset_name = mapping_pieces[0].strip()
+                    ref_hist_name = mapping_pieces[1].strip()
                     # We don't want people to accidentally specify
                     # multiple mappings for the same dataset. Just
                     # don't accept those cases.
