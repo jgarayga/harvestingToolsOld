@@ -1,0 +1,21 @@
+######################################################################
+## File         : harvesting_ref_hist_mappings.txt
+## Latest change: 20091118 JH
+##
+## Purpose:
+
+## This file is used by the cmsHarvester.py to map dataset names to
+## reference histogram names (i.e. tags) in the database. Lines
+## starting with a `#' are considered comments. Any other line is
+## expected to contain a mapping from dataset to reference histogram,
+## separated by a space, e.g.:
+##    
+##   /RelVal/abcd/GEN-SIM-RECO /RelVal/1234/GEN-SIM-RECO
+##
+## maps RelVal dataset 1234 to be used as reference for RelVal abcd.
+##
+## Changes:
+## 20091118 Initial file. (Jeroen Hegeman)
+######################################################################
+
+######################################################################
