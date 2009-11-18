@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091113
+## Last change: 20091118
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.1.2"
+__version__ = "2.2.0"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -334,12 +334,6 @@ class CMSHarvester(object):
         # BUG BUG BUG end
         self.globaltag = None
 
-        # It is possible to override the reference histograms from the
-        # command line by specifying the correct tag in the
-        # database. See the create_es_prefer_snippet() method for
-        # details.
-        self.ref_hist_tag = None
-
         # It's also possible to switch off the use of reference
         # histograms altogether.
         self.use_ref_hists = True
@@ -405,6 +399,13 @@ class CMSHarvester(object):
         self.book_keeping_file_name = None
         self.book_keeping_file_name_default = "harvesting_accounting.txt"
 
+        # The dataset name to reference histogram name mapping is read
+        # from a text file. The name of this file is kept in the
+        # following variable.
+        self.ref_hist_mappings_file_name = None
+        # And this is the default value.
+        self.ref_hist_mappings_file_name_default = "harvesting_ref_hist_mappings.txt"
+
         # Hmmm, hard-coded prefix of the CERN CASTOR area. This is the
         # only supported CASTOR area.
         # NOTE: Make sure this one starts with a `/'.
@@ -422,6 +423,9 @@ class CMSHarvester(object):
         self.datasets_to_ignore = {}
         # This, in turn, will hold all book keeping information.
         self.book_keeping_information = {}
+        # And this is where the dataset name to reference histogram
+        # name mapping is stored.
+        self.ref_hist_mappings = {}
 
         # Cache for CMSSW version availability at different sites.
         self.sites_and_versions_cache = {}
@@ -729,50 +733,8 @@ class CMSHarvester(object):
 
     ##########
 
-    def option_handler_ref_hist_tag(self, option, opt_str, value, parser):
-        """Use this option to override the reference histograms.
-
-        Normally the reference histograms are taken from the database
-        based on the GlobalTag (and for MC based on the dataset name
-        as well). Use this command line option to overrided these
-        default references by specifying the tag to be used.
-
-        Needless to say one should know what one's doing not to screw
-        things up this way...
-
-        """
-
-        # Make sure this flag occurred only once.
-        if not self.ref_hist_tag is None:
-            msg = "Only one reference histogram tag should be specified"
-            self.logger.fatal(msg)
-            raise Usage(msg)
-        # And check that we're allowed to use reference histograms.
-        if not self.use_ref_hists:
-            msg = "Use of reference histograms is switched off. " \
-                  "Did you specify both --no-ref-hists and --ref-hist-tag?"
-            self.logger.fatal(msg)
-            raise Usage(msg)
-        self.ref_hist_tag = value
-
-        self.logger.warning("Overriding default choice of " \
-                            "reference histograms with tag `%s'" % \
-                            self.ref_hist_tag)
-
-        # End of option_handler_ref_hist_tag.
-
-    ##########
-
     def option_handler_no_ref_hists(self, option, opt_str, value, parser):
         "Switch use of all reference histograms off."
-
-        # Check if we were also asked to use a specific reference
-        # histogram set (i.e. tag). That would not make sense.
-        if not self.ref_hist_tag is None:
-            msg = "Please don't use --ref-hist-tag and --no-ref-hists " \
-                  "together. (This would not make sense.)"
-            self.logger.fatal(msg)
-            raise Usage(msg)
 
         self.use_ref_hists = False
 
@@ -860,6 +822,28 @@ class CMSHarvester(object):
                          self.book_keeping_file_name)
 
         # End of option_handler_book_keeping_file.
+
+    ##########
+
+    def option_handler_ref_hist_mapping_file(self, option, opt_str, value, parser):
+        """Store the name of the file for the ref. histogram mapping.
+
+        """
+
+        file_name = value
+
+        if not self.ref_hist_mappings_file_name is None:
+            msg = "Only one reference histogram mapping file " \
+                  "should be specified"
+            self.logger.fatal(msg)
+            raise Usage(msg)
+        self.ref_hist_mappings_file_name = file_name
+
+        self.logger.info("Reference histogram mapping file " \
+                         "to be used: `%s'" % \
+                         self.ref_hist_mappings_file_name)
+
+        # End of option_handler_ref_hist_mapping_file.
 
     ##########
 
@@ -1706,16 +1690,6 @@ class CMSHarvester(object):
                           type="string",
                           metavar="GLOBALTAG")
 
-        # Override the tag to be used to find the reference histograms
-        # in the database.
-        parser.add_option("", "--ref-hist-tag",
-                          help="Tag to be used to find the reference " \
-                          "histograms in the database.",
-                          action="callback",
-                          callback=self.option_handler_ref_hist_tag,
-                          type="string",
-                          metavar="REFHISTTAG")
-
         # Allow switching off of reference histograms.
         parser.add_option("", "--no-ref-hists",
                           help="Don't use any reference histograms",
@@ -1786,6 +1760,16 @@ class CMSHarvester(object):
                           callback=self.option_handler_book_keeping_file,
                           type="string",
                           metavar="BOOKKEEPING-FILE")
+
+        # Option to specify which file to use for the dataset name to
+        # reference histogram name mappings.
+        parser.add_option("", "--refhistmappingfile",
+                          help="File to be use for the reference " \
+                          "histogram mappings.",
+                          action="callback",
+                          callback=self.option_handler_ref_hist_mapping_file,
+                          type="string",
+                          metavar="REFHISTMAPPING-FILE")
 
         # Specify the place in CASTOR where the output should go.
         # NOTE: Only output to CASTOR is supported for the moment,
@@ -1913,6 +1897,18 @@ class CMSHarvester(object):
 
         ###
 
+        # The same holds for the reference histogram mapping file (if
+        # we're using references).
+        if self.use_ref_hists:
+            if self.ref_hist_mappings_file_name is None:
+                self.ref_hist_mappings_file_name = self.ref_hist_mappings_file_name_default
+                msg = "No reference histogram mapping file specified --> " \
+                      "using default `%s'" % \
+                      self.book_keeping_file_name
+                self.logger.warning(msg)
+
+        ###
+
         # We need to know where to put the stuff (okay, the results)
         # on CASTOR.
         if self.castor_base_dir is None:
@@ -1954,17 +1950,6 @@ class CMSHarvester(object):
             if not self.check_globaltag():
                 msg = "GlobalTag `%s' does not exist!" % \
                       self.globaltag
-                self.logger.fatal(msg)
-                raise Usage(msg)
-
-        ###
-
-        # If a tag for the reference histograms was specified, let's
-        # check if that exists.
-        if not self.ref_hist_tag is None:
-            if not self.check_ref_hist_tag():
-                msg = "Reference histogram tag `%s' does not exist!" % \
-                      self.ref_hist_tag
                 self.logger.fatal(msg)
                 raise Usage(msg)
 
@@ -3907,24 +3892,20 @@ class CMSHarvester(object):
 
     ##########
 
-    def check_ref_hist_tag(self, tag_name=None):
+    def check_ref_hist_tag(self, tag_name):
         """Check the existence of tag_name in database connect_name.
 
         Check if tag_name exists as a reference histogram tag in the
-        database given by self.frontier_connection_name. If tag_name
-        is None, self.ref_hist_tag is used instead.
+        database given by self.frontier_connection_name.
 
         """
-
-        if tag_name is None:
-            tag_name = self.ref_hist_tag
 
         connect_name = self.frontier_connection_name
         connect_name += "CMS_COND_31X_DQM_SUMMARY"
 
-        self.logger.info("Checking existence of reference " \
-                         "histogram tag `%s'" % \
-                         tag_name)
+        self.logger.debug("Checking existence of reference " \
+                          "histogram tag `%s'" % \
+                          tag_name)
         self.logger.debug("  (Using database connection `%s')" % \
                           connect_name)
 
@@ -3945,7 +3926,7 @@ class CMSHarvester(object):
             tag_exists = False
         else:
             tag_exists = True
-        self.logger.info("  Reference histogram tag exists? -> %s" % tag_exists)
+        self.logger.debug("  Reference histogram tag exists? -> %s" % tag_exists)
 
         # End of check_ref_hist_tag.
         return tag_exists
@@ -3961,22 +3942,9 @@ class CMSHarvester(object):
 
         """
 
-        # Figure out the name of the reference histograms tag. If one
-        # was specified on the command line of course we'll use that
-        # one.
-        if self.ref_hist_tag is None:
-            dataset_name_escaped = self.escape_dataset_name(dataset_name)
-            ref_hist_tag_name = "REF_HIST_%s" % dataset_name_escaped
-            # In this case we need to make sure that it exists.
-            if not self.check_ref_hist_tag(ref_hist_tag_name):
-                msg = "Reference histogram tag `%s' " \
-                      "(which I guessed based on the dataset name) " \
-                      "does not exist!" % \
-                      ref_hist_tag_name
-                self.logger.fatal(msg)
-                raise Usage(msg)
-        else:
-            ref_hist_tag_name = self.ref_hist_tag
+        # Figure out the name of the reference histograms tag.
+        # NOTE: The existence of these tags has already been checked.
+        ref_hist_tag_name = self.ref_hist_mappings[dataset_name]
 
         connect_name = self.frontier_connection_name
         connect_name += "CMS_COND_31X_DQM_SUMMARY"
@@ -4119,12 +4087,7 @@ class CMSHarvester(object):
         # Preproduction samples reference histograms are explicitly
         # switched off in this case.
 
-        # NOTE: In case a reference histogram tag was specified on the
-        # command line the es_prefer snippet is _always_ used with
-        # that tag.
-
-        use_es_prefer = (not self.ref_hist_tag is None) or \
-                        (self.harvesting_type == "RelVal")
+        use_es_prefer = (self.harvesting_type == "RelVal")
         use_refs = use_es_prefer or \
                    (not self.harvesting_type == "Preproduction")
         # Allow global override.
@@ -4496,6 +4459,116 @@ class CMSHarvester(object):
 
     ##########
 
+    def load_ref_hist_mappings(self):
+        """Load the reference histogram mappings from file.
+
+        The dataset name to reference histogram name mappings are read
+        from a text file specified in self.ref_hist_mappings_file_name.
+
+        """
+
+        # DEBUG DEBUG DEBUG
+        assert len(self.ref_hist_mappings) < 1, \
+               "ERROR Should not be RE-loading " \
+               "reference histogram mappings!"
+        # DEBUG DEBUG DEBUG end
+
+        self.logger.info("Loading reference histogram mappings " \
+                         "from file `%s'" % \
+                         self.ref_hist_mappings_file_name)
+
+        mappings_lines = None
+        try:
+            mappings_file = file(self.ref_hist_mappings_file_name, "r")
+            mappings_lines = mappings_file.readlines()
+            mappings_file.close()
+        except IOError:
+            msg = "ERROR: Could not open reference histogram mapping "\
+                  "file `%s'" % self.ref_hist_mappings_file_name
+            self.logger.fatal(msg)
+            raise Error(msg)
+
+        ##########
+
+        # The format we expect is: two white-space separated pieces
+        # per line. The first the dataset name for which the reference
+        # should be used, the second one the name of the reference
+        # histogram in the database.
+
+        for mapping in mappings_lines:
+            # Skip comment lines.
+            if not mapping.startswith("#"):
+                mapping = mapping.strip()
+                if len(mapping) > 0:
+                    mapping_pieces = mapping.split()
+                    if len(mapping_pieces) != 2:
+                        msg = "ERROR: The reference histogram mapping " \
+                              "file contains a line I don't " \
+                              "understand:\n  %s" % mapping
+                        self.logger.fatal(msg)
+                        raise Error(msg)
+                    dataset_name = mapping_pieces[0]
+                    ref_hist_name = mapping_pieces[1]
+                    # We don't want people to accidentally specify
+                    # multiple mappings for the same dataset. Just
+                    # don't accept those cases.
+                    if self.ref_hist_mappings.has_key(dataset_name):
+                        msg = "ERROR: The reference histogram mapping " \
+                              "file contains multiple mappings for " \
+                              "dataset `%s'."
+                        self.logger.fatal(msg)
+                        raise Error(msg)
+
+                    # All is well that ends well.
+                    self.ref_hist_mappings[dataset_name] = ref_hist_name
+
+        ##########
+
+        self.logger.info("  Successfully loaded %d mapping(s)" % \
+                         len(self.ref_hist_mappings))
+        max_len = max([len(i) for i in self.ref_hist_mappings.keys()])
+        for (map_from, map_to) in self.ref_hist_mappings.iteritems():
+            self.logger.info("    %-*s -> %s" % \
+                              (max_len, map_from, map_to))
+
+        # End of load_ref_hist_mappings.
+
+    ##########
+
+    def check_ref_hist_mappings(self):
+        """Make sure all necessary reference histograms exist.
+
+        Check that for each of the datasets to be processed a
+        reference histogram is specified and that that histogram
+        exists in the database.
+
+        """
+
+        self.logger.info("Checking reference histogram mappings")
+
+        for dataset_name in self.datasets_to_use:
+            try:
+                ref_hist_name = self.ref_hist_mappings[dataset_name]
+            except KeyError:
+                msg = "ERROR: No reference histogram mapping found " \
+                      "for dataset `%s'" % \
+                      dataset_name
+                self.logger.fatal(msg)
+                raise Error(msg)
+
+            if not self.check_ref_hist_tag(ref_hist_name):
+                msg = "Reference histogram tag `%s' " \
+                      "(used for dataset `%s') does not exist!" % \
+                      (ref_hist_name, dataset_name)
+                self.logger.fatal(msg)
+                raise Usage(msg)
+
+        self.logger.info("  Done checking reference histogram mappings.")
+
+        # End of check_ref_hist_mappings.
+
+    ##########
+
     def write_book_keeping_file(self):
         """Write the book keeping for this run to file.
 
@@ -4802,6 +4875,15 @@ class CMSHarvester(object):
                 # Process the list of datasets to ignore and fold that
                 # into the list of datasets to consider.
                 self.process_dataset_ignore_list()
+
+                if self.use_ref_hists:
+                    # Load the dataset name to reference histogram
+                    # name mappings from file.
+                    self.load_ref_hist_mappings()
+                    # Now make sure that for all datasets we want to
+                    # process there is a reference defined. Otherwise
+                    # just bomb out before wasting any more time.
+                    self.check_ref_hist_mappings()
 
                 # Obtain all required information on the datasets,
                 # like run numbers and GlobalTags.
