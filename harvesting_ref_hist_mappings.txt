@@ -10,12 +10,19 @@
 ## expected to contain a mapping from dataset to reference histogram,
 ## separated by a space, e.g.:
 ##    
-##   /RelVal/abcd/GEN-SIM-RECO /RelVal/1234/GEN-SIM-RECO
+##   /RelVal/abcd/GEN-SIM-RECO RelVal__1234__GEN-SIM-RECO
 ##
-## maps RelVal dataset 1234 to be used as reference for RelVal abcd.
+## maps the reference histograms with tag RelVal__1234__GEN-SIM-RECO
+## to be used as reference for dataset /RelVal/abcd/GEN-SIM-RECO.
+##
+## NOTE: In general the tag names in the database do not contain 
+##       slashes.
 ##
 ## Changes:
 ## 20091118 Initial file. (Jeroen Hegeman)
+## 20091118 Some clarifications and first value. (Jeroen Hegeman)
 ######################################################################
+
+/RelValMinBias_2M_PROD/CMSSW_3_1_5-MC_31X_V3-v1/GEN-SIM-RECO REF_HIST_RelValMinBias_2M_PROD__CMSSW_3_1_4-MC_31X_V3-v1__GEN-SIM-RECO
 
 ######################################################################
