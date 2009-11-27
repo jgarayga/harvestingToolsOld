@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091118
+## Last change: 20091127
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.2.3"
+__version__ = "2.3.0"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -339,12 +339,19 @@ class CMSHarvester(object):
         self.use_ref_hists = True
 
         # The database name and account are hard-coded. They are not
-        # likely to change before the end-of-life of this
-        # tool. Actually there is a way to override this from the
-        # command line. Please only use this for testing purposes.
-        self.frontier_connection_name = "frontier://" \
-                                        "FrontierProd/"
-        self.frontier_connection_overridden = False
+        # likely to change before the end-of-life of this tool. But of
+        # course there is a way to override this from the command
+        # line. One can even override the Frontier connection used for
+        # the GlobalTag and for the reference histograms
+        # independently. Please only use this for testing purposes.
+        self.frontier_connection_name = {}
+        self.frontier_connection_name["globaltag"] = "frontier://" \
+                                                     "FrontierProd/"
+        self.frontier_connection_name["refhists"] = "frontier://" \
+                                                    "FrontierProd/"
+        self.frontier_connection_overridden = {}
+        for key in self.frontier_connection_name.keys():
+            self.frontier_connection_overridden[key] = False
 
         # This contains information specific to each of the harvesting
         # types. Used to create the harvesting configuration. It is
@@ -744,29 +751,73 @@ class CMSHarvester(object):
 
     ##########
 
-    def option_handler_frontier_connection(self, option, opt_str, value, parser):
+    def option_handler_frontier_connection(self, option, opt_str,
+                                           value, parser):
         """Override the default Frontier connection string.
 
         Please only use this for testing (e.g. when a test payload has
         been inserted into cms_orc_off instead of cms_orc_on).
 
+        This method gets called for three different command line
+        options:
+        - --frontier-connection,
+        - --frontier-connection-for-globaltag,
+        - --frontier-connection-for-refhists.
+        Appropriate care has to be taken to make sure things are only
+        specified once.
+
         """
 
-        # Make sure that this option is specified only once. (Okay, in
-        # a bit of a dodgy way...)
-        if self.frontier_connection_overridden == True:
-            msg = "Please specify only one Frontier connection"
-            self.logger.fatal(msg)
-            raise Usage(msg)
+        # Figure out with which command line option we've been called.
+        frontier_type = opt_str.split("-")[-1]
+        if frontier_type == "connection":
+            # Main option: change all connection strings.
+            frontier_types = self.frontier_connection_name.keys()
+        else:
+            frontier_types = [frontier_type]
+
+        # Make sure that each Frontier connection is specified only
+        # once. (Okay, in a bit of a dodgy way...)
+        for connection_name in frontier_types:
+            if self.frontier_connection_overridden[connection_name] == True:
+                msg = "Please specify either:\n" \
+                      "  `--frontier-connection' to change the " \
+                      "Frontier connection used for everything, or\n" \
+                      "either one or both of\n" \
+                      "  `--frontier-connection-for-globaltag' to " \
+                      "change the Frontier connection used for the " \
+                      "GlobalTag and\n" \
+                      "  `--frontier-connection-for-refhists' to change " \
+                      "the Frontier connection used for the " \
+                      "reference histograms."
+                self.logger.fatal(msg)
+                raise Usage(msg)
 
         if not value.endswith("/"):
             value += "/"
 
-        self.frontier_connection_name = value
-        self.frontier_connection_overridden = True
+        frontier_prefix = "frontier://"
+        if not value.startswith(frontier_prefix):
+            msg = "Expecting Frontier connections to start with " \
+                  "`%s'" % frontier_prefix
+            self.logger.fatal(msg)
+            raise Usage(msg)
 
-        self.logger.warning("Overriding default Frontier connection " \
-                            "with `%s'" % self.frontier_connection_name)
+        for connection_name in frontier_types:
+            self.frontier_connection_name[connection_name] = value
+            self.frontier_connection_overridden[connection_name] = True
+
+            frontier_type_str = "unknown"
+            if connection_name == "globaltag":
+                frontier_type_str = "the GlobalTag"
+            elif connection_name == "refhists":
+                frontier_type_str = "the reference histograms"
+
+            self.logger.warning("Overriding default Frontier " \
+                                "connection for %s " \
+                                "with `%s'" % \
+                                (frontier_type_str,
+                                 self.frontier_connection_name[connection_name]))
 
         # End of option_handler_frontier_connection
 
@@ -1708,6 +1759,29 @@ class CMSHarvester(object):
                           type="string",
                           metavar="FRONTIER")
 
+        # Similar to the above but specific to the Frontier connection
+        # to be used for the GlobalTag.
+        parser.add_option("", "--frontier-connection-for-globaltag",
+                          help="Use this Frontier connection to find " \
+                          "GlobalTags.\nPlease only use this for " \
+                          "testing.",
+                          action="callback",
+                          callback=self.option_handler_frontier_connection,
+                          type="string",
+                          metavar="FRONTIER")
+
+        # Similar to the above but specific to the Frontier connection
+        # to be used for the reference histograms.
+        parser.add_option("", "--frontier-connection-for-refhists",
+                          help="Use this Frontier connection to find " \
+                          "LocalTags (for reference " \
+                          "histograms).\nPlease only use this for " \
+                          "testing.",
+                          action="callback",
+                          callback=self.option_handler_frontier_connection,
+                          type="string",
+                          metavar="FRONTIER")
+
         # Option to specify the name (or a regexp) of the dataset(s)
         # to be used.
         parser.add_option("", "--dataset",
@@ -1908,7 +1982,7 @@ class CMSHarvester(object):
                 self.ref_hist_mappings_file_name = self.ref_hist_mappings_file_name_default
                 msg = "No reference histogram mapping file specified --> " \
                       "using default `%s'" % \
-                      self.book_keeping_file_name
+                      self.ref_hist_mappings_file_name
                 self.logger.warning(msg)
 
         ###
@@ -1956,6 +2030,24 @@ class CMSHarvester(object):
                       self.globaltag
                 self.logger.fatal(msg)
                 raise Usage(msg)
+
+        ###
+
+        # Dump some info about the Frontier connections used.
+        for (key, value) in self.frontier_connection_name.iteritems():
+            frontier_type_str = "unknown"
+            if key == "globaltag":
+                frontier_type_str = "the GlobalTag"
+            elif key == "refhists":
+                frontier_type_str = "the reference histograms"
+            non_str = None
+            if self.frontier_connection_overridden[key] == True:
+                non_str = "non-"
+            else:
+                non_str = ""
+            self.logger.info("Using %sdefault Frontier " \
+                             "connection for %s: `%s'" % \
+                             (non_str, frontier_type_str, value))
 
         ###
 
@@ -3450,9 +3542,15 @@ class CMSHarvester(object):
                                   ", ".join([str(i) for i in empty_runs]))
 
                 # Update the book keeping (for single runs this time).
+
                 # DEBUG DEBUG DEBUG
-                assert not self.book_keeping_information.has_key(dataset_name)
+                # Hmmm, actually that should read BUG BUG BUG. There
+                # is no reason for the below assumption to hold,
+                # right? We could have processed runs from this
+                # dataset in a previous running of the harvester.
+                #assert not self.book_keeping_information.has_key(dataset_name)
                 # DEBUG DEBUG DEBUG end
+
                 self.book_keeping_information[dataset_name] = empty_runs
 
         ###
@@ -3843,8 +3941,8 @@ class CMSHarvester(object):
         """Check if globaltag exists.
 
         Check if globaltag exists as GlobalTag in the database given
-        by self.frontier_connection_name. If globaltag is None,
-        self.globaltag is used instead.
+        by self.frontier_connection_name['globaltag']. If globaltag is
+        None, self.globaltag is used instead.
 
         """
 
@@ -3855,7 +3953,7 @@ class CMSHarvester(object):
         if globaltag.endswith("::All"):
             globaltag = globaltag[:-5]
 
-        connect_name = self.frontier_connection_name
+        connect_name = self.frontier_connection_name["globaltag"]
         # BUG BUG BUG
         # There is a bug in cmscond_tagtree_list: some magic is
         # missing from the implementation requiring one to specify
@@ -3876,11 +3974,15 @@ class CMSHarvester(object):
         cmd = "cmscond_tagtree_list -c %s -T %s" % \
               (connect_name, globaltag)
         (status, output) = commands.getstatusoutput(cmd)
-        if status != 0:
+        if status != 0 or \
+               output.find("error") > -1:
             msg = "Could not check existence of GlobalTag `%s' in `%s'" % \
                   (globaltag, connect_name)
             self.logger.fatal(msg)
-            self.logger.debug(output)
+            self.logger.debug("Command used:")
+            self.logger.debug("  %s" % cmd)
+            self.logger.debug("Output received:")
+            self.logger.debug("  %s" % output)
             raise Error(msg)
         if output.find("does not exist") > -1:
             self.logger.debug("GlobalTag `%s' does not exist in `%s':" % \
@@ -3900,11 +4002,11 @@ class CMSHarvester(object):
         """Check the existence of tag_name in database connect_name.
 
         Check if tag_name exists as a reference histogram tag in the
-        database given by self.frontier_connection_name.
+        database given by self.frontier_connection_name['ref_hists'].
 
         """
 
-        connect_name = self.frontier_connection_name
+        connect_name = self.frontier_connection_name["refhists"]
         connect_name += "CMS_COND_31X_DQM_SUMMARY"
 
         self.logger.debug("Checking existence of reference " \
@@ -3923,14 +4025,16 @@ class CMSHarvester(object):
             self.logger.debug(output)
             raise Error(msg)
         if not tag_name in output.split():
-            self.logger.debug("Reference histogram tag `%s' does not exist in `%s'" % \
+            self.logger.debug("Reference histogram tag `%s' " \
+                              "does not exist in `%s'" % \
                               (tag_name, connect_name))
             self.logger.debug(" Existing tags: `%s'" % \
                               "', `".join(output.split()))
             tag_exists = False
         else:
             tag_exists = True
-        self.logger.debug("  Reference histogram tag exists? -> %s" % tag_exists)
+        self.logger.debug("  Reference histogram tag exists? " \
+                          "-> %s" % tag_exists)
 
         # End of check_ref_hist_tag.
         return tag_exists
@@ -3950,7 +4054,7 @@ class CMSHarvester(object):
         # NOTE: The existence of these tags has already been checked.
         ref_hist_tag_name = self.ref_hist_mappings[dataset_name]
 
-        connect_name = self.frontier_connection_name
+        connect_name = self.frontier_connection_name["refhists"]
         connect_name += "CMS_COND_31X_DQM_SUMMARY"
         record_name = "DQMReferenceHistogramRootFileRcd"
 
@@ -4077,6 +4181,13 @@ class CMSHarvester(object):
         customisations = [""]
 
         customisations.append("# Now follow some customisations")
+        customisations.append("")
+
+        connect_name = self.frontier_connection_name["globaltag"]
+        connect_name += "CMS_COND_31X_GLOBALTAG"
+        customisations.append("process.GlobalTag.connect = %s" % \
+                              connect_name)
+
         customisations.append("")
 
         # About the reference histograms... For data there is only one
