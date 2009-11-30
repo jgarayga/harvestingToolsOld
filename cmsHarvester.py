@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091127
+## Last change: 20091130
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.3.0"
+__version__ = "2.3.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -4185,7 +4185,7 @@ class CMSHarvester(object):
 
         connect_name = self.frontier_connection_name["globaltag"]
         connect_name += "CMS_COND_31X_GLOBALTAG"
-        customisations.append("process.GlobalTag.connect = %s" % \
+        customisations.append("process.GlobalTag.connect = \"%s\"" % \
                               connect_name)
 
         customisations.append("")
