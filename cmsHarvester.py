@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.3.1"
+__version__ = "2.3.2"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -2151,6 +2151,16 @@ class CMSHarvester(object):
         assert not self.dbs_api is None
         # DEBUG DEBUG DEBUG end
 
+        # Some minor checking to make sure that whatever we've been
+        # given as dataset name actually sounds like a dataset name.
+        if not (dataset_name.startswith("/") and \
+                dataset_name.endswith("RECO")):
+            self.logger.warning("Dataset name `%s' does not sound " \
+                                 "like a valid dataset name!" % \
+                                dataset_name)
+
+        #----------
+
         api = self.dbs_api
         dbs_query = "find dataset where dataset like %s " \
                     "and dataset.status = VALID" % \
@@ -3106,7 +3116,7 @@ class CMSHarvester(object):
                     # Skip lines starting with a `#'.
                     if dataset_stripped[0] != "#":
                         dataset_names.extend(self. \
-                                             dbs_resolve_dataset_name(dataset))
+                                             dbs_resolve_dataset_name(dataset_stripped))
                 listfile.close()
             except IOError:
                 msg = "ERROR: Could not open input list file `%s'" % \
