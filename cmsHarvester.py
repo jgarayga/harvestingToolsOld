@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091130
+## Last change: 20091208
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.4.0"
+__version__ = "2.4.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -4008,15 +4008,22 @@ class CMSHarvester(object):
 
         #----------
 
-        tag_contains_ref_hist_key = None
+        tag_contains_ref_hist_key = False
         if self.use_ref_hists and tag_exists:
             # Check for the key required to use reference histograms.
-                tag_contains_ref_hist_key = self.check_globaltag_contains_ref_hist_key(globaltag, connect_name)
+            tag_contains_ref_hist_key = self.check_globaltag_contains_ref_hist_key(globaltag, connect_name)
+
+        #----------
+
+        if self.use_ref_hists:
+            ret_val = tag_exists and tag_contains_ref_hist_key
+        else:
+            ret_val = tag_exists
 
         #----------
 
         # End of check_globaltag.
-        return (tag_exists and tag_contains_ref_hist_key)
+        return ret_val
 
     ##########
 
