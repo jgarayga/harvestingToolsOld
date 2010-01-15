@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.5.1"
+__version__ = "2.5.2"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -2095,6 +2095,15 @@ class CMSHarvester(object):
             self.logger.warning("I will skip all data datasets.")
 
         # TODO TODO TODO end
+
+        # Make sure the GlobalTag ends with `::All'.
+        if not self.globaltag is None:
+            if not self.globaltag.endswith("::All"):
+                self.logger.warning("Specified GlobalTag `%s' does " \
+                                    "not end in `::All' --> " \
+                                    "appending this missing piece" % \
+                                    self.globaltag)
+                self.globaltag = "%s::All" % self.globaltag
 
         ###
 
