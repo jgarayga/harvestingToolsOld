@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.5.3"
+__version__ = "2.5.4"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -558,17 +558,9 @@ class CMSHarvester(object):
 
         """
 
-        # TODO TODO TODO
-        # It would be much nicer to have a real class to store CMSSW
-        # versions, so that they can be sorted and compared properly.
-        # TODO TODO TODO end
-
-        account_name = None
-        version = self.cmssw_version[6:11]
-        if version < "3_4_0":
-            account_name = "CMS_COND_31X_GLOBALTAG"
-        else:
-            account_name = "CMS_COND_34X_GLOBALTAG"
+        # This never changed, unlike the cms_cond_31X_DQM_SUMMARY ->
+        # cms_cond_34X_DQM transition.
+        account_name = "CMS_COND_31X_GLOBALTAG"
 
         # End of db_account_name_cms_cond_globaltag.
         return account_name
@@ -583,7 +575,7 @@ class CMSHarvester(object):
         if version < "3_4_0":
             account_name = "CMS_COND_31X_DQM_SUMMARY"
         else:
-            account_name = "CMS_COND_34X_DQM_SUMMARY"
+            account_name = "CMS_COND_34X"
 
         # End of db_account_name_cms_cond_dqm_summary.
         return account_name
@@ -4309,6 +4301,10 @@ class CMSHarvester(object):
                output.find("error") > -1:
             msg = "Could not check existence of GlobalTag `%s' in `%s'" % \
                   (globaltag, connect_name)
+            if output.find(".ALL_TABLES not found") > -1:
+                msg = "%s\n" \
+                      "Missing database account `%s'" % \
+                      (msg, output.split(".ALL_TABLES")[0].split()[-1])
             self.logger.fatal(msg)
             self.logger.debug("Command used:")
             self.logger.debug("  %s" % cmd)
