@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.5.2"
+__version__ = "2.5.3"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -547,6 +547,46 @@ class CMSHarvester(object):
 
         # End of format_conditions_string.
         return conditions_string
+
+    ##########
+
+    def db_account_name_cms_cond_globaltag(self):
+        """Return the database account name used to store the GlobalTag.
+
+        The name of the database account depends (albeit weakly) on
+        the CMSSW release version.
+
+        """
+
+        # TODO TODO TODO
+        # It would be much nicer to have a real class to store CMSSW
+        # versions, so that they can be sorted and compared properly.
+        # TODO TODO TODO end
+
+        account_name = None
+        version = self.cmssw_version[6:11]
+        if version < "3_4_0":
+            account_name = "CMS_COND_31X_GLOBALTAG"
+        else:
+            account_name = "CMS_COND_34X_GLOBALTAG"
+
+        # End of db_account_name_cms_cond_globaltag.
+        return account_name
+
+    ##########
+
+    def db_account_name_cms_cond_dqm_summary(self):
+        """See db_account_name_cms_cond_globaltag."""
+
+        account_name = None
+        version = self.cmssw_version[6:11]
+        if version < "3_4_0":
+            account_name = "CMS_COND_31X_DQM_SUMMARY"
+        else:
+            account_name = "CMS_COND_34X_DQM_SUMMARY"
+
+        # End of db_account_name_cms_cond_dqm_summary.
+        return account_name
 
     ##########
 
@@ -4227,7 +4267,7 @@ class CMSHarvester(object):
         connect_name = connect_name.replace("frontier://",
                                             "frontier://cmsfrontier:8000/")
         # BUG BUG BUG end
-        connect_name += "CMS_COND_31X_GLOBALTAG"
+        connect_name += self.db_account_name_cms_cond_globaltag()
 
         tag_exists = self.check_globaltag_exists(globaltag, connect_name)
 
@@ -4344,7 +4384,7 @@ class CMSHarvester(object):
         """
 
         connect_name = self.frontier_connection_name["refhists"]
-        connect_name += "CMS_COND_31X_DQM_SUMMARY"
+        connect_name += self.db_account_name_cms_cond_dqm_summary()
 
         self.logger.debug("Checking existence of reference " \
                           "histogram tag `%s'" % \
@@ -4395,7 +4435,7 @@ class CMSHarvester(object):
         ref_hist_tag_name = self.ref_hist_mappings[dataset_name]
 
         connect_name = self.frontier_connection_name["refhists"]
-        connect_name += "CMS_COND_31X_DQM_SUMMARY"
+        connect_name += self.db_account_name_cms_cond_dqm_summary()
         record_name = "DQMReferenceHistogramRootFileRcd"
 
         # Build up the code snippet.
@@ -4524,7 +4564,7 @@ class CMSHarvester(object):
         customisations.append("")
 
         connect_name = self.frontier_connection_name["globaltag"]
-        connect_name += "CMS_COND_31X_GLOBALTAG"
+        connect_name += self.db_account_name_cms_cond_globaltag()
         customisations.append("process.GlobalTag.connect = \"%s\"" % \
                               connect_name)
 
