@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -113,9 +113,9 @@ from Configuration.PyReleaseValidation.ConfigBuilder import \
 #import FWCore.ParameterSet.Config as cms
 
 # Debugging stuff.
+import pdb
 try:
     import debug_hook
-    import pdb
 except ImportError:
     pass
 
@@ -4905,6 +4905,40 @@ class CMSHarvester(object):
 
     ##########
 
+    def ref_hist_mappings_needed(self, dataset_name=None):
+        """Check if we need to load and check the reference mappings.
+
+        For data the reference histograms should be taken
+        automatically from the GlobalTag, so we don't need any
+        mappings. For RelVals we need to know a mapping to be used in
+        the es_prefer code snippet (different references for each of
+        the datasets.)
+
+        WARNING: This implementation is a bit convoluted.
+
+        """
+
+        # If no dataset name given, do everything, otherwise check
+        # only this one dataset.
+        if not dataset_name is None:
+            data_type = self.datasets_information[dataset_name] \
+                        ["datatype"]
+            mappings_needed = (data_type == "mc")
+            # DEBUG DEBUG DEBUG
+            if not mappings_needed:
+                assert data_type == "data"
+            # DEBUG DEBUG DEBUG end
+        else:
+            tmp = [self.ref_hist_mappings_needed(dataset_name) \
+                   for dataset_name in \
+                   self.datasets_information.keys()]
+            mappings_needed = (True in tmp)
+
+        # End of ref_hist_mappings_needed.
+        return mappings_needed
+
+    ##########
+
     def load_ref_hist_mappings(self):
         """Load the reference histogram mappings from file.
 
@@ -4987,6 +5021,12 @@ class CMSHarvester(object):
         Check that for each of the datasets to be processed a
         reference histogram is specified and that that histogram
         exists in the database.
+
+        NOTE: There's a little complication here. Since this whole
+        thing was designed to allow (in principle) harvesting of both
+        data and MC datasets in one go, we need to be careful to check
+        the availability fof reference mappings only for those
+        datasets that need it.
 
         """
 
@@ -5333,7 +5373,12 @@ class CMSHarvester(object):
                 # contains.
                 self.process_dataset_ignore_list()
 
-                if self.use_ref_hists:
+                # Obtain all required information on the datasets,
+                # like run numbers and GlobalTags.
+                self.build_datasets_information()
+
+                if self.use_ref_hists and \
+                       self.ref_hist_mappings_needed():
                     # Load the dataset name to reference histogram
                     # name mappings from file.
                     self.load_ref_hist_mappings()
@@ -5341,10 +5386,9 @@ class CMSHarvester(object):
                     # process there is a reference defined. Otherwise
                     # just bomb out before wasting any more time.
                     self.check_ref_hist_mappings()
-
-                # Obtain all required information on the datasets,
-                # like run numbers and GlobalTags.
-                self.build_datasets_information()
+                else:
+                    self.logger.info("No need to load reference " \
+                                     "histogram mappings file")
 
                 # OBSOLETE OBSOLETE OBSOLETE
 ##                # TODO TODO TODO
