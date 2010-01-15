@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20091208
+## Last change: 20100115
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.4.1"
+__version__ = "2.5.0"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -42,6 +42,9 @@ twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
 
 ###########################################################################
 ## TODO list
+##
+## !!! Some code refactoring is in order. A lot of the code that loads
+## and builds dataset and run lists is duplicated. !!!
 ##
 ## - SPECIAL (future):
 ##   After discussing all these harvesting issues yet again with Luca,
@@ -380,15 +383,24 @@ class CMSHarvester(object):
 
         # The input method: are we reading a dataset name (or regexp)
         # directly from the command line or are we reading a file
-        # containing a list of dataset specifications.
+        # containing a list of dataset specifications. Actually we
+        # keep one of each for both datasets and runs.
         self.input_method = {}
-        self.input_method["use"] = None
-        self.input_method["ignore"] = None
+        self.input_method["datasets"] = {}
+        self.input_method["datasets"]["use"] = None
+        self.input_method["datasets"]["ignore"] = None
+        self.input_method["runs"] = {}
+        self.input_method["runs"]["use"] = None
+        self.input_method["runs"]["ignore"] = None
 
         # The name of whatever input we're using.
         self.input_name = {}
-        self.input_name["use"] = None
-        self.input_name["ignore"] = None
+        self.input_name["datasets"] = {}
+        self.input_name["datasets"]["use"] = None
+        self.input_name["datasets"]["ignore"] = None
+        self.input_name["runs"] = {}
+        self.input_name["runs"]["use"] = None
+        self.input_name["runs"]["ignore"] = None
 
         # If this is true, we're running in `force mode'. In this case
         # the sanity checks are performed but failure will not halt
@@ -433,6 +445,11 @@ class CMSHarvester(object):
         # And this is where the dataset name to reference histogram
         # name mapping is stored.
         self.ref_hist_mappings = {}
+
+        # We're now also allowing run selection. This means we also
+        # have to keep list of runs requested and vetoed by the user.
+        self.runs_to_use = {}
+        self.runs_to_ignore = {}
 
         # Cache for CMSSW version availability at different sites.
         self.sites_and_versions_cache = {}
@@ -842,22 +859,28 @@ class CMSHarvester(object):
 
         """
 
-        # Figure out if we were called for the `use these datasets' or
-        # the `ignore these datasets' case.
+        # Figure out if we were called for the `use these' or the
+        # `ignore these' case.
         if opt_str.lower().find("ignore") > -1:
             spec_type = "ignore"
         else:
             spec_type = "use"
 
-        if not self.input_method[spec_type] is None:
+        # Similar: are we being called for datasets or for runs?
+        if opt_str.lower().find("dataset") > -1:
+            select_type = "datasets"
+        else:
+            select_type = "runs"
+
+        if not self.input_method[select_type][spec_type] is None:
             msg = "Please only specify one input method " \
-                  "(for the `%s' case)" % spec_type
+                  "(for the `%s' case)" % opt_str
             self.logger.fatal(msg)
             raise Usage(msg)
 
-        input_method = opt_str.replace("-","").replace("ignore", "")
-        self.input_method[spec_type] = input_method
-        self.input_name[spec_type] = value
+        input_method = opt_str.replace("-", "").replace("ignore", "")
+        self.input_method[select_type][spec_type] = input_method
+        self.input_name[select_type][spec_type] = value
 
         self.logger.debug("Input method for the `%s' case: %s" % \
                           (spec_type, input_method))
@@ -1815,6 +1838,24 @@ class CMSHarvester(object):
                           type="string",
                           metavar="DATASET-IGNORE")
 
+        # Option to specify the name (or a regexp) of the run(s)
+        # to be used.
+        parser.add_option("", "--runs",
+                          help="Run number(s) to process",
+                          action="callback",
+                          callback=self.option_handler_input_spec,
+                          type="string",
+                          metavar="RUNS")
+
+        # Option to specify the name (or a regexp) of the run(s)
+        # to be ignored.
+        parser.add_option("", "--runs-ignore",
+                          help="Run number(s) to ignore",
+                          action="callback",
+                          callback=self.option_handler_input_spec,
+                          type="string",
+                          metavar="RUNS-IGNORE")
+
         # Option to specify a file containing a list of dataset names
         # (or regexps) to be used.
         parser.add_option("", "--listfile",
@@ -1828,7 +1869,7 @@ class CMSHarvester(object):
                           metavar="LISTFILE")
 
         # Option to specify a file containing a list of dataset names
-        # (or regexps) to be used.
+        # (or regexps) to be ignored.
         parser.add_option("", "--listfile-ignore",
                           help="File containing list of dataset names " \
                           "(or regexps) to ignore",
@@ -1836,6 +1877,26 @@ class CMSHarvester(object):
                           callback=self.option_handler_input_spec,
                           type="string",
                           metavar="LISTFILE-IGNORE")
+
+        # Option to specify a file containing a list of runs to be
+        # used.
+        parser.add_option("", "--runslistfile",
+                          help="File containing list of run numbers " \
+                          "to process",
+                          action="callback",
+                          callback=self.option_handler_input_spec,
+                          type="string",
+                          metavar="RUNSLISTFILE")
+
+        # Option to specify a file containing a list of runs
+        # to be ignored.
+        parser.add_option("", "--runslistfile-ignore",
+                          help="File containing list of run numbers " \
+                          "to ignore",
+                          action="callback",
+                          callback=self.option_handler_input_spec,
+                          type="string",
+                          metavar="RUNSLISTFILE-IGNORE")
 
         # Option to specify which file to use for the book keeping
         # information.
@@ -1965,14 +2026,15 @@ class CMSHarvester(object):
         ###
 
         # We need an input method so we can find the dataset name(s).
-        if self.input_method["use"] is None:
-            msg = "Please specify an input dataset name or a list file name"
+        if self.input_method["datasets"]["use"] is None:
+            msg = "Please specify an input dataset name " \
+                  "or a list file name"
             self.logger.fatal(msg)
             raise Usage(msg)
 
         # DEBUG DEBUG DEBUG
         # If we get here, we should also have an input name.
-        assert not self.input_name is None
+        assert not self.input_name["datasets"]["use"] is None
         # DEBUG DEBUG DEBUG end
 
         ###
@@ -3153,8 +3215,8 @@ class CMSHarvester(object):
 
         self.logger.info("Building list of datasets to consider...")
 
-        input_method = self.input_method["use"]
-        input_name = self.input_name["use"]
+        input_method = self.input_method["datasets"]["use"]
+        input_name = self.input_name["datasets"]["use"]
         dataset_names = self.build_dataset_list(input_method,
                                                 input_name)
         self.datasets_to_use = dict(zip(dataset_names,
@@ -3165,8 +3227,7 @@ class CMSHarvester(object):
         for dataset in dataset_names:
             self.logger.info("  `%s'" % dataset)
 
-
-        # End of build_dataset_list.
+        # End of build_dataset_use_list.
 
     ##########
 
@@ -3180,8 +3241,8 @@ class CMSHarvester(object):
 
         self.logger.info("Building list of datasets to ignore...")
 
-        input_method = self.input_method["ignore"]
-        input_name = self.input_name["ignore"]
+        input_method = self.input_method["datasets"]["ignore"]
+        input_name = self.input_name["datasets"]["ignore"]
         dataset_names = self.build_dataset_list(input_method,
                                                 input_name)
         self.datasets_to_ignore = dict(zip(dataset_names,
@@ -3193,6 +3254,101 @@ class CMSHarvester(object):
             self.logger.info("  `%s'" % dataset)
 
         # End of build_dataset_ignore_list.
+
+    ##########
+
+    def build_runs_list(self, input_method, input_name):
+
+        runs = []
+
+        # A list of runs (either to use or to ignore) is not
+        # required. This protects against `empty cases.'
+        if input_method is None:
+            pass
+        elif input_method == "runs":
+            # A list of runs was specified directly from the command
+            # line.
+            self.logger.info("Reading list of runs from the " \
+                             "command line")
+            runs.extend([int(i.strip()) \
+                         for i in input_name.split(",") \
+                         if len(i.strip()) > 0])
+        elif input_method == "runslistfile":
+            # We were passed a file containing a list of runs.
+            self.logger.info("Reading list of runs from file `%s'" % \
+                             input_name)
+            try:
+                listfile = open(input_name, "r")
+                for run in listfile:
+                    # Skip empty lines.
+                    run_stripped = run.strip()
+                    if len(run_stripped) < 1:
+                        continue
+                    # Skip lines starting with a `#'.
+                    if run_stripped[0] != "#":
+                        runs.append(int(run_stripped))
+                listfile.close()
+            except IOError:
+                msg = "ERROR: Could not open input list file `%s'" % \
+                      input_name
+                self.logger.fatal(msg)
+                raise Error(msg)
+        else:
+            # DEBUG DEBUG DEBUG
+            # We should never get here.
+            assert False, "Unknown input method `%s'" % input_method
+            # DEBUG DEBUG DEBUG end
+
+        # Remove duplicates, sort and done.
+        runs = list(set(runs))
+
+        # End of build_runs_list().
+        return runs
+
+    ##########
+
+    def build_runs_use_list(self):
+        """Build a list of runs to process.
+
+        """
+
+        self.logger.info("Building list of runs to consider...")
+
+        input_method = self.input_method["runs"]["use"]
+        input_name = self.input_name["runs"]["use"]
+        runs = self.build_runs_list(input_method, input_name)
+        self.runs_to_use = dict(zip(runs, [None] * len(runs)))
+
+        self.logger.info("  found %d run(s) to process:" % \
+                         len(runs))
+        if len(runs) > 0:
+            self.logger.info("  %s" % ", ".join([str(i) for i in runs]))
+
+        # End of build_runs_list().
+
+    ##########
+
+    def build_runs_ignore_list(self):
+        """Build a list of runs to ignore.
+
+        NOTE: We should always have a list of runs to process, but
+        it may be that we don't have a list of runs to ignore.
+
+        """
+
+        self.logger.info("Building list of runs to ignore...")
+
+        input_method = self.input_method["runs"]["ignore"]
+        input_name = self.input_name["runs"]["ignore"]
+        runs = self.build_runs_list(input_method, input_name)
+        self.runs_to_ignore = dict(zip(runs, [None] * len(runs)))
+
+        self.logger.info("  found %d run(s) to ignore:" % \
+                         len(runs))
+        if len(runs) > 0:
+            self.logger.info("  %s" % ", ".join([str(i) for i in runs]))
+
+        # End of build_runs_ignore_list().
 
     ##########
 
@@ -3243,6 +3399,63 @@ class CMSHarvester(object):
 
     ##########
 
+    def process_runs_use_and_ignore_lists(self):
+
+        self.logger.info("Processing list of runs to use and ignore...")
+
+        # This basically adds all runs in a dataset to be processed,
+        # except for any runs that are not specified in the `to use'
+        # list and any runs that are specified in the `to ignore'
+        # list.
+
+        # NOTE: It is assumed that those lists make sense. The input
+        # should be checked against e.g. overlapping `use' and
+        # `ignore' lists.
+
+        runs_to_use = self.runs_to_use
+        runs_to_ignore = self.runs_to_ignore
+
+        for dataset_name in self.datasets_to_use:
+            runs_in_dataset = self.datasets_information[dataset_name]["runs"]
+
+            # First some sanity checks.
+            runs_to_use_tmp = []
+            for run in runs_to_use:
+                if not run in runs_in_dataset:
+                    self.logger.warning("Dataset `%s' does not contain " \
+                                        "requested run %d " \
+                                        "--> ignoring `use' of this run" % \
+                                        (dataset_name, run))
+                else:
+                    runs_to_use_tmp.append(run)
+
+            if len(runs_to_use) > 0:
+                runs = runs_to_use_tmp
+                self.logger.info("Using %d out of %d runs " \
+                                 "of dataset `%s'" % \
+                                 (len(runs), len(runs_in_dataset),
+                                  dataset_name))
+            else:
+                runs = runs_in_dataset
+
+            if len(runs_to_ignore) > 0:
+                runs_tmp = []
+                for run in runs:
+                    if not run in runs_to_ignore:
+                        runs_tmp.append(run)
+                self.logger.info("Ignoring %d out of %d runs " \
+                                 "of dataset `%s'" % \
+                                 (len(runs)- len(runs_tmp),
+                                  len(runs_in_dataset),
+                                  dataset_name))
+                runs = runs_tmp
+
+            self.datasets_to_use[dataset_name] = runs
+
+        # End of process_runs_use_and_ignore_lists().
+
+    ##########
+
     def process_book_keeping(self):
         """Fold the results of the book keeping we read into the list of
         things to do.
@@ -3287,7 +3500,7 @@ class CMSHarvester(object):
                          "(think I) already processed previously" % \
                          (len(self.datasets_to_use) -
                           len(dataset_names_filtered)))
-        self.logger.debug("      (removed %d run(s))" % nruns_removed)
+        self.logger.info("      (for a total of %d run(s))" % nruns_removed)
 
         self.datasets_to_use = dataset_names_filtered
 
@@ -3586,7 +3799,10 @@ class CMSHarvester(object):
                 #assert not self.book_keeping_information.has_key(dataset_name)
                 # DEBUG DEBUG DEBUG end
 
-                self.book_keeping_information[dataset_name] = empty_runs
+                if self.book_keeping_information.has_key(dataset_name):
+                    self.book_keeping_information[dataset_name].update(empty_runs)
+                else:
+                    self.book_keeping_information[dataset_name] = [empty_runs]
 
         ###
 
@@ -3918,8 +4134,8 @@ class CMSHarvester(object):
                     cmssw_version = self.datasets_information[dataset_name] \
                                     ["cmssw_version"]
                     self.logger.info("Picking site for mirrored dataset " \
-                                     "`%s'" % \
-                                     dataset_name)
+                                     "`%s', run %d" % \
+                                     (dataset_name, run))
                     site_name = self.pick_a_site(site_names, cmssw_version)
                 else:
                     site_name = site_names[0]
@@ -4048,11 +4264,12 @@ class CMSHarvester(object):
             self.logger.debug("Command used:")
             self.logger.debug("  %s" % cmd)
             self.logger.debug("Output received:")
-            self.logger.debug("  %s" % output)
+            self.logger.debug(output)
             raise Error(msg)
         if output.find("does not exist") > -1:
             self.logger.debug("GlobalTag `%s' does not exist in `%s':" % \
                               (globaltag, connect_name))
+            self.logger.debug("Output received:")
             self.logger.debug(output)
             tag_exists = False
         else:
@@ -4095,6 +4312,7 @@ class CMSHarvester(object):
                               "histograms `%s' does not exist " \
                               "in GlobalTag `%s':" % \
                               (ref_hist_key, globaltag))
+            self.logger.debug("Output received:")
             self.logger.debug(output)
             tag_contains_key = False
         else:
@@ -4112,7 +4330,7 @@ class CMSHarvester(object):
         """Check the existence of tag_name in database connect_name.
 
         Check if tag_name exists as a reference histogram tag in the
-        database given by self.frontier_connection_name['ref_hists'].
+        database given by self.frontier_connection_name['refhists'].
 
         """
 
@@ -4135,7 +4353,7 @@ class CMSHarvester(object):
             self.logger.debug("Command used:")
             self.logger.debug("  %s" % cmd)
             self.logger.debug("Output received:")
-            self.logger.debug("  %s" % output)
+            self.logger.debug(output)
             raise Error(msg)
         if not tag_name in output.split():
             self.logger.debug("Reference histogram tag `%s' " \
@@ -5099,6 +5317,10 @@ class CMSHarvester(object):
                 # and the list of dataset names to ignore.
                 self.build_dataset_ignore_list()
 
+                # The same for the runs lists (if specified).
+                self.build_runs_use_list()
+                self.build_runs_ignore_list()
+
                 # Read book keeping file. This _could_ contain a list
                 # of things we have already done previously, so we
                 # want to skip those.
@@ -5106,6 +5328,9 @@ class CMSHarvester(object):
 
                 # Process the list of datasets to ignore and fold that
                 # into the list of datasets to consider.
+                # NOTE: The run-based selection is done later since
+                # right now we don't know yet which runs a dataset
+                # contains.
                 self.process_dataset_ignore_list()
 
                 if self.use_ref_hists:
@@ -5121,16 +5346,20 @@ class CMSHarvester(object):
                 # like run numbers and GlobalTags.
                 self.build_datasets_information()
 
-                # TODO TODO TODO
-                # Need to think about where this should go, but
-                # somewhere we have to move over the fact that we want
-                # to process all runs for each dataset that we're
-                # considering. This basically means copying over the
-                # information from self.datasets_information[]["runs"]
-                # to self.datasets_to_use[].
-                for dataset_name in self.datasets_to_use.keys():
-                    self.datasets_to_use[dataset_name] = self.datasets_information[dataset_name]["runs"]
-                # TODO TODO TODO end
+                # OBSOLETE OBSOLETE OBSOLETE
+##                # TODO TODO TODO
+##                # Need to think about where this should go, but
+##                # somewhere we have to move over the fact that we want
+##                # to process all runs for each dataset that we're
+##                # considering. This basically means copying over the
+##                # information from self.datasets_information[]["runs"]
+##                # to self.datasets_to_use[].
+##                for dataset_name in self.datasets_to_use.keys():
+##                    self.datasets_to_use[dataset_name] = self.datasets_information[dataset_name]["runs"]
+##                # TODO TODO TODO end
+                # OBSOLETE OBSOLETE OBSOLETE end
+
+                self.process_runs_use_and_ignore_lists()
 
                 # Process the datasets and runs that we have already
                 # done according to the book keeping.
@@ -5146,7 +5375,9 @@ class CMSHarvester(object):
                 self.check_dataset_list()
                 # and see if there is anything left to do.
                 if len(self.datasets_to_use) < 1:
-                    self.logger.info("No datasets (left?) to process")
+                    self.logger.info("After all checks etc. " \
+                                     "there are no datasets (left?) " \
+                                     "to process")
                 else:
 
                     self.logger.info("After all checks etc. we are left " \
@@ -5205,8 +5436,12 @@ class CMSHarvester(object):
                             # Doh! Just re-raise the damn thing.
                             raise
                         else:
-                            tmp = self.datasets_information[dataset_name] \
-                                  ["num_events"]
+##                            tmp = self.datasets_information[dataset_name] \
+##                                  ["num_events"]
+                            tmp = {}
+                            for run_number in self.datasets_to_use[dataset_name]:
+                                tmp[run_number] = self.datasets_information \
+                                                  [dataset_name]["num_events"][run_number]
                             if self.book_keeping_information. \
                                    has_key(dataset_name):
                                 self.book_keeping_information[dataset_name].update(tmp)
