@@ -4,7 +4,7 @@
 ## File       : cmsHarvest.py
 ## Author     : Jeroen Hegeman
 ##              jeroen.hegeman@cern.ch
-## Last change: 20100115
+## Last change: 20100201
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.5.4"
+__version__ = "2.5.5"
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
@@ -3843,7 +3843,7 @@ class CMSHarvester(object):
                 if self.book_keeping_information.has_key(dataset_name):
                     self.book_keeping_information[dataset_name].update(empty_runs)
                 else:
-                    self.book_keeping_information[dataset_name] = [empty_runs]
+                    self.book_keeping_information[dataset_name] = empty_runs
 
         ###
 
