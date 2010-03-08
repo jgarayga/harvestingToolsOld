@@ -2,9 +2,9 @@
 
 ###########################################################################
 ## File       : cmsHarvest.py
-## Author     : Jeroen Hegeman
-##              jeroen.hegeman@cern.ch
-## Last change: 20100201
+## Authors    : Jeroen Hegeman (jeroen.hegeman@cern.ch)
+##              Niklas Pietsch (niklas.pietsch@desy.de)
+## Last change: 20100308
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
 ##              For more information please refer to the CMS Twiki url
@@ -33,8 +33,9 @@ methods.
 
 ###########################################################################
 
-__version__ = "2.5.5"
-__author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)"
+__version__ = "3.0.0"
+__author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)," \
+             "Niklas Pietsch (niklas.pietsch@desy.de)"
 
 twiki_url = "https://twiki.cern.ch/twiki/bin/view/CMS/CmsHarvester"
 
@@ -94,6 +95,7 @@ import datetime
 import copy
 from inspect import getargspec
 from random import choice
+
 
 # These we need to communicate with DBS global DBSAPI
 from DBSAPI.dbsApi import DbsApi
@@ -435,6 +437,10 @@ class CMSHarvester(object):
         # the --no-t1access flag can be used. This variable keeps
         # track of that special mode.
         self.non_t1access = False
+
+        self.nr_max_sites = 1
+
+	self.preferred_site = "no preference"
 
         # This will become the list of datasets and runs to consider
         self.datasets_to_use = {}
@@ -800,8 +806,8 @@ class CMSHarvester(object):
         self.logger.warning("Switching off all use of reference histograms")
 
         # End of option_handler_no_ref_hists.
-
-    ##########
+        
+     ##########
 
     def option_handler_frontier_connection(self, option, opt_str,
                                            value, parser):
@@ -1059,6 +1065,18 @@ class CMSHarvester(object):
                             "further promises...")
 
         # End of option_handler_no_t1access.
+       
+    ##########
+
+    def option_handler_sites(self, option, opt_str, value, parser):
+
+        self.nr_max_sites = value
+
+    ##########
+
+    def option_handler_preferred_site(self, option, opt_str, value, parser):
+
+        self.preferred_site = value
 
     ##########
 
@@ -1636,7 +1654,6 @@ class CMSHarvester(object):
         submit to things like T0.
 
         """
-
         # This is the T0.
         sites_forbidden = ["caf.cern.ch"]
 
@@ -1645,8 +1662,8 @@ class CMSHarvester(object):
         # Source:
         #   https://cmsweb.cern.ch/sitedb/sitelist/?naming_scheme=ce
         # Hard-coded, yes. Not nice, no.
-        if self.non_t1access:
-            sites_forbidden.extend([
+
+        all_t1 = [
                 "srm-cms.cern.ch",
                 "ccsrm.in2p3.fr",
                 "cmssrm-fzk.gridka.de",
@@ -1656,8 +1673,24 @@ class CMSHarvester(object):
                 "srm.grid.sinica.edu.tw",
                 "srm2.grid.sinica.edu.tw",
                 "srmcms.pic.es",
-                "storm-fe-cms.cr.cnaf.infn.it",
-                ])
+                "storm-fe-cms.cr.cnaf.infn.it"
+                ]
+
+	country_codes = {
+	      "CH" : "srm-cms.cern.ch",
+	      "FR" : "ccsrm.in2p3.fr",
+	      "DE" : "cmssrm-fzk.gridka.de",
+	      "GOV" : "cmssrm.fnal.gov",
+	      "DE2" : "gridka-dCache.fzk.de",
+	      "UK" : "srm-cms.gridpp.rl.ac.uk",
+	      "TW" : "srm.grid.sinica.edu.tw",
+	      "TW2" : "srm2.grid.sinica.edu.tw",
+	      "ES" : "srmcms.pic.es",
+	      "IT" : "storm-fe-cms.cr.cnaf.infn.it"
+	        }
+
+        if self.non_t1access: 
+            sites_forbidden.extend(all_t1)
 
         for site in sites_forbidden:
             if site in sites:
@@ -1673,8 +1706,24 @@ class CMSHarvester(object):
         while len(sites) > 0 and \
               site_name is None:
 
-            # Just pick one.
-            se_name = choice(sites)
+            # Create list of t1_sites
+            t1_sites = []
+            for site in sites:
+                if site in all_t1:
+                    t1_sites.append(site)
+
+	    if self.preferred_site in country_codes:
+	      self.preferred_site = country_codes[self.preferred_site]
+
+	    # If avilable pick preferred site
+	    if self.preferred_site in sites:
+	      se_name = self.preferred_site
+            # Else, if available pick t1 site
+            elif len(t1_sites) > 0:
+                se_name = choice(t1_sites)
+            # Else pick any site
+            else:
+                se_name = choice(sites)
 
             # But check that it hosts the CMSSW version we want.
 
@@ -1877,7 +1926,7 @@ class CMSHarvester(object):
                           action="callback",
                           callback=self.option_handler_input_spec,
                           type="string",
-                          metavar="RUNS")
+                          metavar="RUNS")                   
 
         # Option to specify the name (or a regexp) of the run(s)
         # to be ignored.
@@ -1972,6 +2021,31 @@ class CMSHarvester(object):
                           "without special `t1access' role",
                           action="callback",
                           callback=self.option_handler_no_t1access)
+                        
+        # Option to set the max number of sites, each
+        #job is submitted to 
+        parser.add_option("", "--max-sites",
+                          help="Max. number of sites each job is submitted to",
+                          action="callback",
+                          callback=self.option_handler_sites,
+                          type="int") 
+
+        # Option to set the preferred site
+        parser.add_option("", "--site",
+                          help="Specifies site the jobs are preferably submitted to. T1 sites may be shortened by the following (country) codes: \
+					      srm-cms.cern.ch : CH \
+					      ccsrm.in2p3.fr : FR \
+					      cmssrm-fzk.gridka.de : DE \
+					      cmssrm.fnal.gov : GOV \
+					      gridka-dCache.fzk.de : DE2 \
+					      rm-cms.gridpp.rl.ac.uk : UK \
+					      srm.grid.sinica.edu.tw : TW \
+					      srm2.grid.sinica.edu.tw : TW2 \
+					      srmcms.pic.es : ES \
+					      storm-fe-cms.cr.cnaf.infn.it : IT",
+                          action="callback",
+                          callback=self.option_handler_preferred_site,
+                          type="string") 
 
         # This is the command line flag to list all harvesting
         # type-to-sequence mappings.
@@ -4041,7 +4115,7 @@ class CMSHarvester(object):
 
     ##########
 
-    def create_multicrab_block_name(self, dataset_name, run_number):
+    def create_multicrab_block_name(self, dataset_name, run_number, index):
         """Create the block name to use for this dataset/run number.
 
         This is what appears in the brackets `[]' in multicrab.cfg. It
@@ -4051,7 +4125,7 @@ class CMSHarvester(object):
         """
 
         dataset_name_escaped = self.escape_dataset_name(dataset_name)
-        block_name = "%s_%09d" % (dataset_name_escaped, run_number)
+        block_name = "%s_%09d_%s" % (dataset_name_escaped, run_number, index)
 
         # End of create_multicrab_block_name.
         return block_name
@@ -4138,6 +4212,8 @@ class CMSHarvester(object):
 
         """
 
+        number_max_sites = self.nr_max_sites + 1
+
         multicrab_config_lines = []
         multicrab_config_lines.append(self.config_file_header())
         multicrab_config_lines.append("")
@@ -4151,76 +4227,109 @@ class CMSHarvester(object):
             runs = self.datasets_to_use[dataset_name]
             dataset_name_escaped = self.escape_dataset_name(dataset_name)
             castor_prefix = self.castor_prefix
+
             for run in runs:
-                config_file_name = self. \
-                                   create_config_file_name(dataset_name, run)
-                output_file_name = self. \
-                                   create_output_file_name(dataset_name, run)
 
-                # DEBUG DEBUG DEBUG
-                # We should only get here if we're treating a
-                # dataset/run that is fully contained at a single
-                # site.
-                assert (len(self.datasets_information[dataset_name] \
-                            ["sites"][run]) == 1) or \
-                            self.datasets_information[dataset_name]["mirrored"]
-                # DEBUG DEBUG DEBUG end
-
-                site_names = self.datasets_information[dataset_name] \
-                             ["sites"][run].keys()
-                # If we're looking at a mirrored dataset we just pick
-                # one of the sites. Otherwise there is nothing to
-                # choose.
-                if len(site_names) > 1:
-                    cmssw_version = self.datasets_information[dataset_name] \
-                                    ["cmssw_version"]
-                    self.logger.info("Picking site for mirrored dataset " \
-                                     "`%s', run %d" % \
-                                     (dataset_name, run))
-                    site_name = self.pick_a_site(site_names, cmssw_version)
-                else:
-                    site_name = site_names[0]
-                nevents = self.datasets_information[dataset_name]["num_events"][run]
-
-                # The block name.
-                multicrab_block_name = self.create_multicrab_block_name( \
-                    dataset_name, run)
-                multicrab_config_lines.append("[%s]" % \
-                                              multicrab_block_name)
-
-                # The site (better: SE) where to run this job.
-                # See comment at start of method.
-                multicrab_config_lines.append("GRID.se_white_list = %s" % \
-                                              site_name)
-
-                # The parameter set (i.e. the configuration for this
-                # dataset).
-                multicrab_config_lines.append("CMSSW.pset = %s" % \
-                                              config_file_name)
-                # The dataset.
-                multicrab_config_lines.append("CMSSW.datasetpath = %s" % \
-                                              dataset_name)
-                # The run selection: one job (i.e. one block in
-                # multicrab.cfg) for each run of each dataset.
-                multicrab_config_lines.append("CMSSW.runselection = %d" % \
-                                              run)
-                # The number of events to process.
-                # See comment at start of method.
-                multicrab_config_lines.append("CMSSW.total_number_of_events = %d" % \
-                                              nevents)
-                # The output file name.
-                multicrab_config_lines.append("CMSSW.output_file = %s" % \
-                                              output_file_name)
+                # Begin of block
 
                 # CASTOR output dir.
                 castor_dir = self.datasets_information[dataset_name] \
-                             ["castor_path"][run]
-                castor_dir = castor_dir.replace(castor_prefix, "")
-                multicrab_config_lines.append("USER.user_remote_dir = %s" % \
-                                              castor_dir)
+                                 ["castor_path"][run]
 
-                # End of block.
-                multicrab_config_lines.append("")
+                cmd = "rfdir %s" % castor_dir
+                (status, output) = commands.getstatusoutput(cmd)
+
+                if len(output) <= 0:
+
+                    # DEBUG DEBUG DEBUG
+                    # We should only get here if we're treating a
+                    # dataset/run that is fully contained at a single
+                    # site.
+                    assert (len(self.datasets_information[dataset_name] \
+                            ["sites"][run]) == 1) or \
+                            self.datasets_information[dataset_name]["mirrored"]
+                    # DEBUG DEBUG DEBUG end
+
+                    site_names = self.datasets_information[dataset_name] \
+                             ["sites"][run].keys()
+
+                    for i in range(1, number_max_sites, 1):
+                        if len(site_names) > 0: 
+                            index = "site_%02d" % (i)
+
+                            config_file_name = self. \
+                                       create_config_file_name(dataset_name, run)
+                            output_file_name = self. \
+                                       create_output_file_name(dataset_name, run)
+
+
+                            # If we're looking at a mirrored dataset we just pick
+                            # one of the sites. Otherwise there is nothing to
+                            # choose.
+
+                            # Loop variable
+                            loop = 0
+
+                            if len(site_names) > 1:
+                                cmssw_version = self.datasets_information[dataset_name] \
+                                            ["cmssw_version"]
+                                self.logger.info("Picking site for mirrored dataset " \
+                                             "`%s', run %d" % \
+                                             (dataset_name, run))
+                                site_name = self.pick_a_site(site_names, cmssw_version)
+                                if site_name in site_names:
+                                    site_names.remove(site_name)
+
+                            else:
+                                site_name = site_names[0]
+                                site_names.remove(site_name)
+
+                            if site_name is self.no_matching_site_found_str:
+                                if loop < 1:
+                                    break
+
+                            nevents = self.datasets_information[dataset_name]["num_events"][run]
+    
+                            # The block name.
+                            multicrab_block_name = self.create_multicrab_block_name( \
+                                dataset_name, run, index)
+                            multicrab_config_lines.append("[%s]" % \
+                                                      multicrab_block_name)
+
+                            # The site (better: SE) where to run this job.
+                            # See comment at start of method.
+                            multicrab_config_lines.append("GRID.se_white_list = %s" % \
+                                                      site_name)
+
+                            # The parameter set (i.e. the configuration for this
+                            # dataset).
+                            multicrab_config_lines.append("CMSSW.pset = %s" % \
+                                                       config_file_name)
+                            # The dataset.
+                            multicrab_config_lines.append("CMSSW.datasetpath = %s" % \
+                                                      dataset_name)
+                            # The run selection: one job (i.e. one block in
+                            # multicrab.cfg) for each run of each dataset.
+                            multicrab_config_lines.append("CMSSW.runselection = %d" % \
+                                                  run)
+                            # The number of events to process.
+                            # See comment at start of method.
+                            multicrab_config_lines.append("CMSSW.total_number_of_events = %d" % \
+                                              nevents)
+                            # The output file name.
+                            multicrab_config_lines.append("CMSSW.output_file = %s" % \
+                                                      output_file_name)
+
+                            castor_dir = castor_dir.replace(castor_prefix, "")
+                            multicrab_config_lines.append("USER.user_remote_dir = %s" % \
+                                                  castor_dir)
+
+                            # End of block.
+                            multicrab_config_lines.append("")
+
+                            loop = loop + 1
+
+                            self.all_sites_found = True
 
         multicrab_config = "\n".join(multicrab_config_lines)
 
