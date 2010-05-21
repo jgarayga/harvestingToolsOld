@@ -394,7 +394,7 @@ class CMSHarvester(object):
         self.input_method["runs"] = {}
         self.input_method["runs"]["use"] = None
         self.input_method["runs"]["ignore"] = None
-
+        self.input_method["runs"]["ignore"] = None
         # The name of whatever input we're using.
         self.input_name = {}
         self.input_name["datasets"] = {}
@@ -403,6 +403,9 @@ class CMSHarvester(object):
         self.input_name["runs"] = {}
         self.input_name["runs"]["use"] = None
         self.input_name["runs"]["ignore"] = None
+
+	self.Jsonlumi = False
+	self.Jsonfilename = "YourJSON.txt"
 
         # If this is true, we're running in `force mode'. In this case
         # the sanity checks are performed but failure will not halt
@@ -1388,7 +1391,8 @@ class CMSHarvester(object):
         # Now call the checker for all (unique) subdirs.
         castor_dirs = []
         for (dataset_name, runs) in self.datasets_to_use.iteritems():
-            for run in runs:
+
+	    for run in runs:
                 castor_dirs.append(self.datasets_information[dataset_name] \
                                    ["castor_path"][run])
         castor_dirs_unique = list(set(castor_dirs))
@@ -1978,6 +1982,27 @@ class CMSHarvester(object):
                           callback=self.option_handler_input_spec,
                           type="string",
                           metavar="RUNSLISTFILE-IGNORE")
+
+        # Option to specify a Jsonfile contaning a dictionary of run/lumisections pairs
+	# to be used.
+        parser.add_option("", "--Jsonrunfile",
+                          help="Jsonfile containing dictionary of run/lumisections pairs. " \
+                          "All lumisections of runs contained in dictionary are processed.",
+                          action="callback",
+                          callback=self.option_handler_input_spec,
+                          type="string",
+                          metavar="JSONRUNFILE")
+
+        # Option to specify a Jsonfile contaning a dictionary of run/lumisections pairs
+	# to be used.
+        parser.add_option("", "--Jsonfile",
+                          help="Jsonfile containing dictionary of run/lumisections pairs. " \
+                          "Only specified lumisections of runs contained in dictionary are processed.",
+                          action="callback",
+                          callback=self.option_handler_input_spec,
+                          type="string",
+                          metavar="JSONFILE")
+
 
         # Option to specify which file to use for the book keeping
         # information.
@@ -3408,6 +3433,47 @@ class CMSHarvester(object):
                       input_name
                 self.logger.fatal(msg)
                 raise Error(msg)
+
+        elif input_method == "Jsonrunfile":
+            # We were passed a Jsonfile containing a dictionary of
+            # run/lunisection-pairs
+            self.logger.info("Reading runs from file `%s'" % \
+                             input_name)
+            try:
+                Jsonfile = open(input_name, "r")
+                for names in Jsonfile:
+                    dictNames= eval(str(names))
+                    for key in dictNames:
+                        intkey=int(key)
+                        runs.append(intkey)
+                Jsonfile.close()
+            except IOError:
+                msg = "ERROR: Could not open Jsonfile `%s'" % \
+                      input_name
+                self.logger.fatal(msg)
+                raise Error(msg)
+
+        elif input_method == "Jsonfile":
+	    self.Jsonlumi = True
+	    self.Jsonfilename = input_name
+            # We were passed a Jsonfile containing a dictionary of
+            # run/lunisection-pairs
+            self.logger.info("Reading runs and lumisections from file `%s'" % \
+                             input_name)
+            try:
+                Jsonfile = open(input_name, "r")
+                for names in Jsonfile:
+                    dictNames= eval(str(names))
+                    for key in dictNames:
+                        intkey=int(key)
+                        runs.append(intkey)
+                Jsonfile.close()
+            except IOError:
+                msg = "ERROR: Could not open Jsonfile `%s'" % \
+                      input_name
+                self.logger.fatal(msg)
+                raise Error(msg)
+
         else:
             # DEBUG DEBUG DEBUG
             # We should never get here.
@@ -4182,8 +4248,13 @@ class CMSHarvester(object):
         tmp.append("# This reveals data hosted on T1 sites,")
         tmp.append("# which is normally hidden by CRAB.")
         tmp.append("show_prod = 1")
-        tmp.append("total_number_of_events = -1")
         tmp.append("number_of_jobs = 1")
+
+	if self.Jsonlumi == True:
+	    tmp.append("lumi_mask = %s" % self.Jsonfilename)
+	    tmp.append("total_number_of_lumis = -1")
+	else:
+	    tmp.append("total_number_of_events = -1")
 
         if self.harvesting_mode.find("single-step") > -1:
             tmp.append("# Force everything to run in one job.")
@@ -4223,13 +4294,29 @@ class CMSHarvester(object):
 
         dataset_names = self.datasets_to_use.keys()
         dataset_names.sort()
+
+	# Write runlist for upload bookkeeping.
+	tmp_runlist=[]
+	tmp_runlist.append(self.config_file_header())
+	tmp_runlist.append("")
+	tmp_runlist.append("# File for bookkeeping the uploading of runs by upload_to_GUI.sh.")
+	tmp_runlist.append("# Uploaded runs are removed from the Runlist below.")
+	tmp_runlist.append("")
+	tmp_runlist.append("#---------")
+	tmp_runlist.append("# Runlist")
+	tmp_runlist.append("#---------")
+	tmp_runlist.append("")
+
         for dataset_name in dataset_names:
             runs = self.datasets_to_use[dataset_name]
             dataset_name_escaped = self.escape_dataset_name(dataset_name)
             castor_prefix = self.castor_prefix
 
+	    
+
             for run in runs:
 
+		tmp_runlist.append("run_%s" % run)
                 # Begin of block
 
                 # CASTOR output dir.
@@ -4312,10 +4399,17 @@ class CMSHarvester(object):
                             # multicrab.cfg) for each run of each dataset.
                             multicrab_config_lines.append("CMSSW.runselection = %d" % \
                                                   run)
+
                             # The number of events to process.
                             # See comment at start of method.
-                            multicrab_config_lines.append("CMSSW.total_number_of_events = %d" % \
-                                              nevents)
+
+			    if self.Jsonlumi == True:
+				pass
+
+			    else:
+				multicrab_config_lines.append("CMSSW.total_number_of_events = %d" % \
+					      nevents)
+
                             # The output file name.
                             multicrab_config_lines.append("CMSSW.output_file = %s" % \
                                                       output_file_name)
@@ -4332,6 +4426,19 @@ class CMSHarvester(object):
                             self.all_sites_found = True
 
         multicrab_config = "\n".join(multicrab_config_lines)
+
+	# Write upload_bookkeeping_file.
+	upload_bookkeeping_contents = "\n".join(tmp_runlist)
+	upload_bookkeeping_file_name = "upload_bookkeeping.txt"
+
+	if os.path.exists("upload_bookkeeping.txt"):
+	    print "Bookkeeping file for upload to GUI already exists"
+	else:
+	    print "Creating bookkeeping file for upload to GUI"
+	    upload_bookkeeping_file = file(upload_bookkeeping_file_name, "w")
+	    upload_bookkeeping_file.write(upload_bookkeeping_contents)
+	    upload_bookkeeping_file.close()
+	    os.system("chmod +x upload_bookkeeping.txt")
 
         # End of create_multicrab_config.
         return multicrab_config
@@ -5413,6 +5520,73 @@ class CMSHarvester(object):
             self.logger.info("    output will go into `%s'" % \
                              castor_path_common)
 
+	    #if os.path.exists("Upload") == False:
+	    #    os.mkdir("Upload")
+
+	    # Write content of upload file.
+	    tmp_upload=[]
+
+	    tmp_upload.append(self.config_file_header())
+	    tmp_upload.append("#!/bin/zsh")
+	    tmp_upload.append("")
+	    tmp_upload.append("# Script for uploading harvesting output files to a GUI server")
+	    tmp_upload.append("# Server's URL has to be passed as argument, e.g.")
+	    tmp_upload.append("#./upload_to_GUI.sh https://cmsweb.cern.ch/dqm/offline")
+	    tmp_upload.append("#")
+	    tmp_upload.append("# List of runs to be uploaded is written to uplaod_bookkeeping.txt by the cmsHarvester.")
+	    tmp_upload.append("# Uploaded runs are removed from the runlist to avoid multiple uploading,")
+	    tmp_upload.append("# so that this script may be executed any times.")
+	    tmp_upload.append("")
+	    tmp_upload.append("castordir=%s" % castor_path_common)
+	    tmp_upload.append("for run in `nsls $castordir`;")
+	    tmp_upload.append("do")
+	    tmp_upload.append("test=`grep -c \"$run\" upload_bookkeeping.txt`")
+	    tmp_upload.append("if [ $test -eq 1 ];")
+	    tmp_upload.append("then")
+	    tmp_upload.append("rundir=$castordir/$run")
+	    tmp_upload.append("for nevents in `nsls $rundir`;")
+	    tmp_upload.append("do")
+	    tmp_upload.append("neventsdir=$rundir/$nevents")
+	    tmp_upload.append("for section in `nsls $neventsdir`;")
+	    tmp_upload.append("do")
+	    tmp_upload.append("sectiondir=$neventsdir/$section")
+	    tmp_upload.append("for file in `nsls $sectiondir`;")
+	    tmp_upload.append("do")
+	    tmp_upload.append("rootfile=$sectiondir/$file")
+	    tmp_upload.append("echo $rootfile")
+	    tmp_upload.append("size=`rfstat $rootfile | grep Size | perl -pe 's/Size \(bytes\)    \: //'`")
+	    tmp_upload.append("if [ $size -ne 0 ];")
+	    tmp_upload.append("then")
+	    tmp_upload.append("sectiontest=`grep -c \"$run\" upload_bookkeeping.txt`")
+	    tmp_upload.append("if [ $sectiontest -eq 1 ];")
+	    tmp_upload.append("then")
+	    tmp_upload.append("ffile=DQM_V0$(echo $rootfile | perl -pe 's/.*\/DQM_V0// ; s/_1.root/.root/ ; s/_2.root/.root/ ; s/_1.root/.root/')")
+	    tmp_upload.append("rfcp $rootfile ./$ffile")
+	    tmp_upload.append("#./VisMonitoring/DQMServer/scripts/visDQMUpload https://cmsweb.cern.ch/dqm/dev $ffile")
+	    tmp_upload.append("#./VisMonitoring/DQMServer/scripts/visDQMUpload https://cmsweb.cern.ch/dqm/offline $ffile")
+	    tmp_upload.append("./VisMonitoring/DQMServer/scripts/visDQMUpload $1 $ffile")
+	    tmp_upload.append("echo $ffile is uploaded")
+	    tmp_upload.append("rm $ffile")
+	    tmp_upload.append("sed -i /$run/d upload_bookkeeping.txt")
+	    tmp_upload.append("fi")
+	    tmp_upload.append("fi")
+	    tmp_upload.append("done")	
+	    tmp_upload.append("done")
+	    tmp_upload.append("done")
+	    tmp_upload.append("fi")
+	    tmp_upload.append("done")
+
+	    # Write upload file.
+	    upload_contents = "\n".join(tmp_upload)
+	    upload_file_name = "upload_to_GUI.sh"
+	    print upload_file_name
+
+	    upload_file = file(upload_file_name, "w")
+	    upload_file.write(upload_contents)
+	    upload_file.close()
+
+	    os.system("chmod +x upload_to_GUI.sh")
+	    
             castor_paths = dict(zip(runs,
                                     [self.create_castor_path_name_special(dataset_name, i, castor_path_common) \
                                      for i in runs]))
