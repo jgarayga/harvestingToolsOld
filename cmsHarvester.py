@@ -1675,7 +1675,7 @@ class CMSHarvester(object):
 	    self.caf_access =True
 
 	if self.caf_access == False:
-	    print "No CAF access"
+	    #print "No CAF access"
 	    sites_forbidden.append("caf.cern.ch")
 
         # These are the T1 sites. These are only forbidden if we're
