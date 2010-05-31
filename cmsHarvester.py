@@ -440,7 +440,7 @@ class CMSHarvester(object):
         # the --no-t1access flag can be used. This variable keeps
         # track of that special mode.
         self.non_t1access = False
-
+	self.caf_access = False
         self.nr_max_sites = 1
 
 	self.preferred_site = "no preference"
@@ -1071,6 +1071,22 @@ class CMSHarvester(object):
        
     ##########
 
+    def option_handler_caf_access(self, option, opt_str, value, parser):
+        """Set the self.caf_access flag to try and create jobs that
+        run on the CAF.
+
+        """
+        self.caf_access = True
+
+        self.logger.warning("Running in `caf_access' mode. " \
+                            "Will try to create jobs that run " \
+                            "on CAF but no" \
+                            "further promises...")
+
+        # End of option_handler_caf_access.
+       
+    ##########
+
     def option_handler_sites(self, option, opt_str, value, parser):
 
         self.nr_max_sites = value
@@ -1652,19 +1668,20 @@ class CMSHarvester(object):
     ##########
 
     def pick_a_site(self, sites, cmssw_version):
-        """Select a site from the list.
 
-        Basically just select one randomly, but be careful not to
-        submit to things like T0.
+        sites_forbidden = []
 
-        """
-        # This is the T0.
-        sites_forbidden = ["caf.cern.ch"]
+	if (self.preferred_site == "CAF") or (self.preferred_site == "caf.cern.ch"):
+	    self.caf_access =True
+
+	if self.caf_access == False:
+	    print "No CAF access"
+	    sites_forbidden.append("caf.cern.ch")
 
         # These are the T1 sites. These are only forbidden if we're
         # running in non-T1 mode.
         # Source:
-        #   https://cmsweb.cern.ch/sitedb/sitelist/?naming_scheme=ce
+        # https://cmsweb.cern.ch/sitedb/sitelist/?naming_scheme=ce
         # Hard-coded, yes. Not nice, no.
 
         all_t1 = [
@@ -1681,6 +1698,7 @@ class CMSHarvester(object):
                 ]
 
 	country_codes = {
+	      "CAF" : "caf.cern.ch",
 	      "CH" : "srm-cms.cern.ch",
 	      "FR" : "ccsrm.in2p3.fr",
 	      "DE" : "cmssrm-fzk.gridka.de",
@@ -1715,6 +1733,9 @@ class CMSHarvester(object):
             for site in sites:
                 if site in all_t1:
                     t1_sites.append(site)
+	    
+	    if self.caf_access == True:
+	        t1_sites.append("caf.cern.ch")
 
 	    if self.preferred_site in country_codes:
 	      self.preferred_site = country_codes[self.preferred_site]
@@ -1770,7 +1791,7 @@ class CMSHarvester(object):
                     self.logger.error("Could not check site information " \
                                       "for site `%s'" % se_name)
                 else:
-                    if len(output) > 0:
+                    if (len(output) > 0) or (se_name == "caf.cern.ch"):
                         self.sites_and_versions_cache[se_name][cmssw_version] = True
                         site_name = se_name
                         break
@@ -2047,6 +2068,13 @@ class CMSHarvester(object):
                           action="callback",
                           callback=self.option_handler_no_t1access)
                         
+        # Use this to try and create jobs that will run on CAF
+        parser.add_option("", "--caf-access",
+                          help="Try to create jobs that will run " \
+                          "on CAF",
+                          action="callback",
+                          callback=self.option_handler_caf_access)
+
         # Option to set the max number of sites, each
         #job is submitted to 
         parser.add_option("", "--max-sites",
@@ -4228,37 +4256,45 @@ class CMSHarvester(object):
 
         tmp.append(self.config_file_header())
         tmp.append("")
+
+	## CRAB
+	##------
         tmp.append("[CRAB]")
         tmp.append("jobtype = cmssw")
-        tmp.append("scheduler = glite")
         tmp.append("")
+
+	## GRID
+	##------
         tmp.append("[GRID]")
-        tmp.append("# This removes the default blacklisting of T1 sites.")
-        tmp.append("remove_default_blacklist = 1")
-        tmp.append("rb = CERN")
-        if not self.non_t1access:
-            tmp.append("role = t1access")
+        tmp.append("virtual_organization=cms")
         tmp.append("")
+
+	## USER
+	##------
         tmp.append("[USER]")
         tmp.append("copy_data = 1")
-        tmp.append("storage_element=srm-cms.cern.ch")
-        tmp.append("storage_path=/srm/managerv2?SFN=%s" % castor_prefix)
         tmp.append("")
+
+	## CMSSW
+	##-------
         tmp.append("[CMSSW]")
         tmp.append("# This reveals data hosted on T1 sites,")
         tmp.append("# which is normally hidden by CRAB.")
         tmp.append("show_prod = 1")
         tmp.append("number_of_jobs = 1")
-
 	if self.Jsonlumi == True:
 	    tmp.append("lumi_mask = %s" % self.Jsonfilename)
 	    tmp.append("total_number_of_lumis = -1")
 	else:
 	    tmp.append("total_number_of_events = -1")
-
         if self.harvesting_mode.find("single-step") > -1:
             tmp.append("# Force everything to run in one job.")
             tmp.append("no_block_boundary = 1")
+        tmp.append("")
+
+	## CAF
+	##-----
+        tmp.append("[CAF]")
 
         crab_config = "\n".join(tmp)
 
@@ -4311,8 +4347,6 @@ class CMSHarvester(object):
             runs = self.datasets_to_use[dataset_name]
             dataset_name_escaped = self.escape_dataset_name(dataset_name)
             castor_prefix = self.castor_prefix
-
-	    
 
             for run in runs:
 
@@ -4383,40 +4417,66 @@ class CMSHarvester(object):
                             multicrab_config_lines.append("[%s]" % \
                                                       multicrab_block_name)
 
-                            # The site (better: SE) where to run this job.
-                            # See comment at start of method.
-                            multicrab_config_lines.append("GRID.se_white_list = %s" % \
-                                                      site_name)
+			    ## CRAB
+			    ##------
+			    if site_name == "caf.cern.ch":
+				multicrab_config_lines.append("CRAB.use_server=0")
+				multicrab_config_lines.append("CRAB.scheduler=caf")
+			    else:
+				multicrab_config_lines.append("scheduler = glite")
 
-                            # The parameter set (i.e. the configuration for this
-                            # dataset).
+			    ## GRID
+			    ##------
+			    if site_name == "caf.cern.ch":
+			        pass
+                            else:
+			        multicrab_config_lines.append("GRID.se_white_list = %s" % \
+                                                      site_name)
+				multicrab_config_lines.append("# This removes the default blacklisting of T1 sites.")
+				multicrab_config_lines.append("GRID.remove_default_blacklist = 1")
+				multicrab_config_lines.append("GRID.rb = CERN")
+				if not self.non_t1access:
+				    multicrab_config_lines.append("GRID.role = t1access")
+
+			    ## USER
+			    ##------
+
+			    castor_dir = castor_dir.replace(castor_prefix, "")
+			    if site_name == "caf.cern.ch":
+			        multicrab_config_lines.append("USER.storage_element=T2_CH_CAF")
+				castor_dir = castor_dir.replace("/cms/store/caf/user/npietsch", "")
+				multicrab_config_lines.append("USER.user_remote_dir = %s" % \
+						      castor_dir)
+				multicrab_config_lines.append("USER.check_user_remote_dir=0")
+			    else:
+				multicrab_config_lines.append("USER.user_remote_dir = %s" % \
+						      castor_dir)
+				multicrab_config_lines.append("USER.storage_element=srm-cms.cern.ch")
+                                multicrab_config_lines.append("USER.storage_path=/srm/managerv2?SFN=%s" % castor_prefix)
+
+			    ## CMSSW
+			    ##-------
                             multicrab_config_lines.append("CMSSW.pset = %s" % \
                                                        config_file_name)
-                            # The dataset.
                             multicrab_config_lines.append("CMSSW.datasetpath = %s" % \
                                                       dataset_name)
-                            # The run selection: one job (i.e. one block in
-                            # multicrab.cfg) for each run of each dataset.
                             multicrab_config_lines.append("CMSSW.runselection = %d" % \
                                                   run)
 
-                            # The number of events to process.
-                            # See comment at start of method.
-
 			    if self.Jsonlumi == True:
 				pass
-
 			    else:
 				multicrab_config_lines.append("CMSSW.total_number_of_events = %d" % \
 					      nevents)
-
                             # The output file name.
                             multicrab_config_lines.append("CMSSW.output_file = %s" % \
                                                       output_file_name)
 
-                            castor_dir = castor_dir.replace(castor_prefix, "")
-                            multicrab_config_lines.append("USER.user_remote_dir = %s" % \
-                                                  castor_dir)
+			    ## CAF
+			    ##-----
+			    if site_name == "caf.cern.ch":
+			        multicrab_config_lines.append("CAF.queue=cmscaf1nd")
+
 
                             # End of block.
                             multicrab_config_lines.append("")
@@ -5579,14 +5639,13 @@ class CMSHarvester(object):
 	    # Write upload file.
 	    upload_contents = "\n".join(tmp_upload)
 	    upload_file_name = "upload_to_GUI.sh"
-	    print upload_file_name
 
 	    upload_file = file(upload_file_name, "w")
 	    upload_file.write(upload_contents)
 	    upload_file.close()
-
 	    os.system("chmod +x upload_to_GUI.sh")
-	    
+	    print "Creating file for upload to GUI "
+
             castor_paths = dict(zip(runs,
                                     [self.create_castor_path_name_special(dataset_name, i, castor_path_common) \
                                      for i in runs]))
