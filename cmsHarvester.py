@@ -3510,7 +3510,7 @@ class CMSHarvester(object):
 
         # Remove duplicates, sort and done.
         runs = list(set(runs))
-
+	
         # End of build_runs_list().
         return runs
 
@@ -3627,6 +3627,8 @@ class CMSHarvester(object):
         for dataset_name in self.datasets_to_use:
             runs_in_dataset = self.datasets_information[dataset_name]["runs"]
 
+
+
             # First some sanity checks.
             runs_to_use_tmp = []
             for run in runs_to_use:
@@ -3658,6 +3660,22 @@ class CMSHarvester(object):
                                   len(runs_in_dataset),
                                   dataset_name))
                 runs = runs_tmp
+
+            not_uploaded_files = []
+            if os.path.exists("upload_bookkeeping.txt"):
+                upload_bookkeeping_file = open("upload_bookkeeping.txt", "r")
+                for name in upload_bookkeeping_file:
+		    not_uploaded=name.replace("run_","")
+		    not_uploaded=not_uploaded.replace("\n","")
+		    not_uploaded_files.append(not_uploaded)
+
+		self.logger.info("%d runs have already been uploaded " \
+				 "and are not used" % len(not_uploaded_files))
+		for run in runs:
+		    if not run in not_uploaded_files: 
+			runs.remove(run)
+
+	    
 
             self.datasets_to_use[dataset_name] = runs
 
@@ -4319,6 +4337,13 @@ class CMSHarvester(object):
 
         """
 
+	cmd="who i am | cut -f1 -d' '"
+	(status, output)=commands.getstatusoutput(cmd)
+	UserName = output
+
+	if self.caf_access == True:
+	    print "Extracting %s as user name" %UserName 
+
         number_max_sites = self.nr_max_sites + 1
 
         multicrab_config_lines = []
@@ -4333,15 +4358,6 @@ class CMSHarvester(object):
 
 	# Write runlist for upload bookkeeping.
 	tmp_runlist=[]
-	tmp_runlist.append(self.config_file_header())
-	tmp_runlist.append("")
-	tmp_runlist.append("# File for bookkeeping the uploading of runs by upload_to_GUI.sh.")
-	tmp_runlist.append("# Uploaded runs are removed from the Runlist below.")
-	tmp_runlist.append("")
-	tmp_runlist.append("#---------")
-	tmp_runlist.append("# Runlist")
-	tmp_runlist.append("#---------")
-	tmp_runlist.append("")
 
         for dataset_name in dataset_names:
             runs = self.datasets_to_use[dataset_name]
@@ -4444,7 +4460,7 @@ class CMSHarvester(object):
 			    castor_dir = castor_dir.replace(castor_prefix, "")
 			    if site_name == "caf.cern.ch":
 			        multicrab_config_lines.append("USER.storage_element=T2_CH_CAF")
-				castor_dir = castor_dir.replace("/cms/store/caf/user/npietsch", "")
+				castor_dir = castor_dir.replace("/cms/store/caf/user/%s" %UserName, "")
 				multicrab_config_lines.append("USER.user_remote_dir = %s" % \
 						      castor_dir)
 				multicrab_config_lines.append("USER.check_user_remote_dir=0")
@@ -4485,20 +4501,19 @@ class CMSHarvester(object):
 
                             self.all_sites_found = True
 
-        multicrab_config = "\n".join(multicrab_config_lines)
+	multicrab_config = "\n".join(multicrab_config_lines)
 
 	# Write upload_bookkeeping_file.
-	upload_bookkeeping_contents = "\n".join(tmp_runlist)
-	upload_bookkeeping_file_name = "upload_bookkeeping.txt"
-
 	if os.path.exists("upload_bookkeeping.txt"):
 	    print "Bookkeeping file for upload to GUI already exists"
 	else:
-	    print "Creating bookkeeping file for upload to GUI"
+	    upload_bookkeeping_contents = "\n".join(tmp_runlist)
+	    upload_bookkeeping_file_name = "upload_bookkeeping.txt"
 	    upload_bookkeeping_file = file(upload_bookkeeping_file_name, "w")
 	    upload_bookkeeping_file.write(upload_bookkeeping_contents)
 	    upload_bookkeeping_file.close()
 	    os.system("chmod +x upload_bookkeeping.txt")
+	    print "Creating bookkeeping file for upload to GUI"
 
         # End of create_multicrab_config.
         return multicrab_config
@@ -5585,9 +5600,9 @@ class CMSHarvester(object):
 
 	    # Write content of upload file.
 	    tmp_upload=[]
-
-	    tmp_upload.append(self.config_file_header())
 	    tmp_upload.append("#!/bin/zsh")
+	    tmp_upload.append("")
+	    tmp_upload.append(self.config_file_header())
 	    tmp_upload.append("")
 	    tmp_upload.append("# Script for uploading harvesting output files to a GUI server")
 	    tmp_upload.append("# Server's URL has to be passed as argument, e.g.")
@@ -5635,16 +5650,19 @@ class CMSHarvester(object):
 	    tmp_upload.append("done")
 	    tmp_upload.append("fi")
 	    tmp_upload.append("done")
+	    tmp_upload.append("")
 
 	    # Write upload file.
-	    upload_contents = "\n".join(tmp_upload)
-	    upload_file_name = "upload_to_GUI.sh"
-
-	    upload_file = file(upload_file_name, "w")
-	    upload_file.write(upload_contents)
-	    upload_file.close()
-	    os.system("chmod +x upload_to_GUI.sh")
-	    print "Creating file for upload to GUI "
+	    if os.path.exists("upload_to_GUI.sh"):
+	        print "Script for upload to GUI already exists"
+	    else:
+		upload_contents = "\n".join(tmp_upload)
+		upload_file_name = "upload_to_GUI.sh"
+		upload_file = file(upload_file_name, "w")
+		upload_file.write(upload_contents)
+		upload_file.close()
+		os.system("chmod +x upload_to_GUI.sh")
+		print "Creating script for upload to GUI"
 
             castor_paths = dict(zip(runs,
                                     [self.create_castor_path_name_special(dataset_name, i, castor_path_common) \
