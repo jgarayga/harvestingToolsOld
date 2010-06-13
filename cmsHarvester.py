@@ -21,7 +21,7 @@ your favourite is missing):
 
 - RelValFS: FastSim RelVal.
 
-- Preproduction : Run for MC preproduction samples.
+- MC : Run for MC samples.
 
 - DQMOffline : Run for real data (could also be run for MC).
 
@@ -307,7 +307,7 @@ class CMSHarvester(object):
         self.harvesting_types = [
             "RelVal",
             "RelValFS",
-            "Preproduction",
+            "MC",
             "DQMOffline",
             ]
 
@@ -1136,13 +1136,8 @@ class CMSHarvester(object):
 
         print sep_line_short
 
-        print "`Preproduction' maps to:"
-        print "  pre-3_3_0           : HARVESTING:validationprodHarvesting"
-        print "  3_4_0_pre2 and later: HARVESTING:validationpreprodHarvesting+dqmHarvestingPOG"
-        print "  Exceptions:"
-        print "    3_3_0_pre1-4        : HARVESTING:validationprodHarvesting"
-        print "    3_3_0_pre6          : HARVESTING:validationprodHarvesting"
-        print "    3_4_0_pre1          : HARVESTING:validationprodHarvesting"
+        print "`MC' maps to:"
+        print "    always          : HARVESTING:validationprodHarvesting"
 
         print sep_line_short
 
@@ -1195,10 +1190,10 @@ class CMSHarvester(object):
         harvesting_info["RelValFS"]["eventcontent"] = None
         harvesting_info["RelValFS"]["harvesting"] = "AtRunEnd"
 
-        harvesting_info["Preproduction"] = {}
-        harvesting_info["Preproduction"]["beamspot"] = None
-        harvesting_info["Preproduction"]["eventcontent"] = None
-        harvesting_info["Preproduction"]["harvesting"] = "AtRunEnd"
+        harvesting_info["MC"] = {}
+        harvesting_info["MC"]["beamspot"] = None
+        harvesting_info["MC"]["eventcontent"] = None
+        harvesting_info["MC"]["harvesting"] = "AtRunEnd"
 
         # This is the version-dependent part. And I know, strictly
         # speaking it's not necessary to fill in all three types since
@@ -1244,23 +1239,15 @@ class CMSHarvester(object):
 
         #----------
 
-        # Preproduction (follows the same pattern as RelVal)
-        step_string = None
-        if version < "3_3_0":
-            step_string = "validationprodHarvesting"
-        elif version in ["3_3_0_pre1", "3_3_0_pre2",
-                         "3_3_0_pre3", "3_3_0_pre4",
-                         "3_3_0_pre6", "3_4_0_pre1"]:
-            step_string = "validationprodHarvesting"
-        else:
-            step_string = "validationpreprodHarvesting+dqmHarvestingPOG"
+        # MC
+        step_string = "validationprodHarvesting"
 
-        harvesting_info["Preproduction"]["step_string"] = step_string
+        harvesting_info["MC"]["step_string"] = step_string
 
         # DEBUG DEBUG DEBUG
         # Let's make sure we found something.
         assert not step_string is None, \
-               "ERROR Could not decide a Preproduction harvesting " \
+               "ERROR Could not decide a MC harvesting " \
                "sequence for CMSSW version %s" % self.cmssw_version
         # DEBUG DEBUG DEBUG end
 
@@ -4863,15 +4850,15 @@ class CMSHarvester(object):
         # since the reference histograms to be used depend on the MC
         # sample at hand. In this case we glue in an es_prefer snippet
         # to pick up the references. We do this only for RelVals since
-        # for Preproduction there are no meaningful references so far.
+        # for MC there are no meaningful references so far.
 
         # NOTE: Due to the lack of meaningful references for
-        # Preproduction samples reference histograms are explicitly
+        # MC samples reference histograms are explicitly
         # switched off in this case.
 
         use_es_prefer = (self.harvesting_type == "RelVal")
         use_refs = use_es_prefer or \
-                   (not self.harvesting_type == "Preproduction")
+                   (not self.harvesting_type == "MC")
         # Allow global override.
         use_refs = use_refs and self.use_ref_hists
 
