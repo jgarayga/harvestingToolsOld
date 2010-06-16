@@ -1656,13 +1656,13 @@ class CMSHarvester(object):
 
     def pick_a_site(self, sites, cmssw_version):
 
+	# Create list of forbidden sites
         sites_forbidden = []
 
 	if (self.preferred_site == "CAF") or (self.preferred_site == "caf.cern.ch"):
-	    self.caf_access =True
+	    self.caf_access = True
 
 	if self.caf_access == False:
-	    #print "No CAF access"
 	    sites_forbidden.append("caf.cern.ch")
 
         # These are the T1 sites. These are only forbidden if we're
@@ -1705,6 +1705,17 @@ class CMSHarvester(object):
             if site in sites:
                 sites.remove(site)
 
+	if self.preferred_site in country_codes:
+	    self.preferred_site = country_codes[self.preferred_site]
+
+	if self.preferred_site != "no preference":
+	    if self.preferred_site in sites:
+	        sites = [self.preferred_site]
+	    else:
+		sites= []
+
+	print sites
+ 
         # Looks like we have to do some caching here, otherwise things
         # become waaaay toooo sloooooow. So that's what the
         # sites_and_versions_cache does.
@@ -1715,23 +1726,20 @@ class CMSHarvester(object):
         while len(sites) > 0 and \
               site_name is None:
 
-            # Create list of t1_sites
-            t1_sites = []
-            for site in sites:
-                if site in all_t1:
+	    # Create list of t1_sites
+	    t1_sites = []
+	    for site in sites:
+	        if site in all_t1:
                     t1_sites.append(site)
-	    
-	    if self.caf_access == True:
-	        t1_sites.append("caf.cern.ch")
-
-	    if self.preferred_site in country_codes:
-	      self.preferred_site = country_codes[self.preferred_site]
+	        if site == "caf.cern.ch":
+                    t1_sites.append(site)
 
 	    # If avilable pick preferred site
-	    if self.preferred_site in sites:
-	      se_name = self.preferred_site
+	    #if self.preferred_site in sites:
+	    #  se_name = self.preferred_site
             # Else, if available pick t1 site
-            elif len(t1_sites) > 0:
+
+            if len(t1_sites) > 0:
                 se_name = choice(t1_sites)
             # Else pick any site
             else:
@@ -3656,8 +3664,8 @@ class CMSHarvester(object):
 		    not_uploaded=not_uploaded.replace("\n","")
 		    not_uploaded_files.append(not_uploaded)
 
-		self.logger.info("%d runs have already been uploaded " \
-				 "and are not used" % len(not_uploaded_files))
+		self.logger.info("%d runs have still to be uploaded " \
+				  % len(not_uploaded_files))
 		for run in runs:
 		    if not run in not_uploaded_files: 
 			runs.remove(run)
