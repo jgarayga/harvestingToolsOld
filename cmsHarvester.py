@@ -406,6 +406,8 @@ class CMSHarvester(object):
 
 	self.Jsonlumi = False
 	self.Jsonfilename = "YourJSON.txt"
+     	self.Jsonrunfilename = "YourJSON.txt"
+	self.todofile = "YourToDofile.txt"
 
         # If this is true, we're running in `force mode'. In this case
         # the sanity checks are performed but failure will not halt
@@ -441,6 +443,7 @@ class CMSHarvester(object):
         # track of that special mode.
         self.non_t1access = False
 	self.caf_access = False
+        self.crab_submission = False
         self.nr_max_sites = 1
 
 	self.preferred_site = "no preference"
@@ -894,6 +897,27 @@ class CMSHarvester(object):
 
     ##########
 
+    def option_handler_input_todofile(self, option, opt_str, value, parser):
+
+        self.todofile = value
+        # End of option_handler_input_todofile.
+
+    ##########
+
+    def option_handler_input_Jsonfile(self, option, opt_str, value, parser):
+
+        self.Jsonfilename = value
+        # End of option_handler_input_Jsonfile.
+
+    ##########
+
+    def option_handler_input_Jsonrunfile(self, option, opt_str, value, parser):
+
+        self.Jsonrunfilename = value
+        # End of option_handler_input_Jsonrunfile.
+
+    ##########
+
     def option_handler_input_spec(self, option, opt_str, value, parser):
         """TODO TODO TODO
         Document this...
@@ -926,7 +950,7 @@ class CMSHarvester(object):
         self.logger.debug("Input method for the `%s' case: %s" % \
                           (spec_type, input_method))
 
-        # End of option_handler_input_spec.
+        # End of option_handler_input_spec
 
     ##########
 
@@ -1084,6 +1108,16 @@ class CMSHarvester(object):
                             "further promises...")
 
         # End of option_handler_caf_access.
+
+    ##########
+
+    def option_handler_crab_submission(self, option, opt_str, value, parser):
+        """Crab jobs are not created and
+	"submitted automatically",
+        """
+        self.crab_submission = True
+
+        # End of option_handler_crab_submission.
        
     ##########
 
@@ -1364,9 +1398,9 @@ class CMSHarvester(object):
 
         # The event count (i.e. the number of events we currently see
         # for this dataset).
-        nevents = self.datasets_information[dataset_name] \
-                  ["num_events"][run_number]
-        castor_path = os.path.join(castor_path, "nevents_%d" % nevents)
+        #nevents = self.datasets_information[dataset_name] \
+        #          ["num_events"][run_number]
+        castor_path = os.path.join(castor_path, "nevents")
 
         ###
 
@@ -1714,7 +1748,7 @@ class CMSHarvester(object):
 	    else:
 		sites= []
 
-	print sites
+	#print sites
  
         # Looks like we have to do some caching here, otherwise things
         # become waaaay toooo sloooooow. So that's what the
@@ -1862,7 +1896,7 @@ class CMSHarvester(object):
         parser.add_option("", "--harvesting_mode",
                           help="Harvesting mode: %s (default = %s)" % \
                           (", ".join(self.harvesting_modes),
-                           self.harvesting_mode_default),
+                          self.harvesting_mode_default),
                           action="callback",
                           callback=self.option_handler_harvesting_mode,
                           type="string",
@@ -1959,7 +1993,7 @@ class CMSHarvester(object):
 
         # Option to specify a file containing a list of dataset names
         # (or regexps) to be used.
-        parser.add_option("", "--listfile",
+        parser.add_option("", "--datasetfile",
                           help="File containing list of dataset names " \
                           "(or regexps) to process",
                           action="callback",
@@ -1967,17 +2001,17 @@ class CMSHarvester(object):
                           callback=self.option_handler_input_spec,
                           type="string",
                           #dest="self.input_name",
-                          metavar="LISTFILE")
+                          metavar="DATASETFILE")
 
         # Option to specify a file containing a list of dataset names
         # (or regexps) to be ignored.
-        parser.add_option("", "--listfile-ignore",
+        parser.add_option("", "--datasetfile-ignore",
                           help="File containing list of dataset names " \
                           "(or regexps) to ignore",
                           action="callback",
                           callback=self.option_handler_input_spec,
                           type="string",
-                          metavar="LISTFILE-IGNORE")
+                          metavar="DATASETFILE-IGNORE")
 
         # Option to specify a file containing a list of runs to be
         # used.
@@ -1999,13 +2033,13 @@ class CMSHarvester(object):
                           type="string",
                           metavar="RUNSLISTFILE-IGNORE")
 
-        # Option to specify a Jsonfile contaning a dictionary of run/lumisections pairs
+        # Option to specify a Jsonfile contaning a list of runs
 	# to be used.
         parser.add_option("", "--Jsonrunfile",
                           help="Jsonfile containing dictionary of run/lumisections pairs. " \
                           "All lumisections of runs contained in dictionary are processed.",
                           action="callback",
-                          callback=self.option_handler_input_spec,
+                          callback=self.option_handler_input_Jsonrunfile,
                           type="string",
                           metavar="JSONRUNFILE")
 
@@ -2015,9 +2049,18 @@ class CMSHarvester(object):
                           help="Jsonfile containing dictionary of run/lumisections pairs. " \
                           "Only specified lumisections of runs contained in dictionary are processed.",
                           action="callback",
-                          callback=self.option_handler_input_spec,
+                          callback=self.option_handler_input_Jsonfile,
                           type="string",
                           metavar="JSONFILE")
+
+        # Option to specify a ToDo file contaning a list of runs
+	# to be used.
+        parser.add_option("", "--todo-file",
+                          help="Todo file containing a list of runs to process.",
+                          action="callback",
+                          callback=self.option_handler_input_todofile,
+                          type="string",
+                          metavar="TODO-FILE")
 
 
         # Option to specify which file to use for the book keeping
@@ -2063,12 +2106,19 @@ class CMSHarvester(object):
                           action="callback",
                           callback=self.option_handler_no_t1access)
                         
-        # Use this to try and create jobs that will run on CAF
+        # Use this to create jobs that may run on CAF
         parser.add_option("", "--caf-access",
-                          help="Try to create jobs that will run " \
+                          help="Crab jobs may run " \
                           "on CAF",
                           action="callback",
                           callback=self.option_handler_caf_access)
+
+        # Use this to enable automatic creation and submission of crab jobs
+        parser.add_option("", "--automatic-crab-submission",
+                          help="Crab jobs are created and " \
+			  "submitted automatically",
+                          action="callback",
+                          callback=self.option_handler_crab_submission)
 
         # Option to set the max number of sites, each
         #job is submitted to 
@@ -2080,7 +2130,7 @@ class CMSHarvester(object):
 
         # Option to set the preferred site
         parser.add_option("", "--site",
-                          help="Specifies site the jobs are preferably submitted to. T1 sites may be shortened by the following (country) codes: \
+                          help="Crab jobs are submitted to specified site. T1 sites may be shortened by the following (country) codes: \
 					      srm-cms.cern.ch : CH \
 					      ccsrm.in2p3.fr : FR \
 					      cmssrm-fzk.gridka.de : DE \
@@ -3327,7 +3377,7 @@ class CMSHarvester(object):
             # dataset names.
             self.logger.info("Asking DBS for dataset names")
             dataset_names = self.dbs_resolve_dataset_name(input_name)
-        elif input_method == "listfile":
+        elif input_method == "datasetfile":
             # In this case a file containing a list of dataset names
             # is specified. Still, each line may contain wildcards so
             # this step also needs help from DBS.
@@ -3335,7 +3385,8 @@ class CMSHarvester(object):
             self.logger.info("Reading input from list file `%s'" % \
                              input_name)
             try:
-                listfile = open(input_name, "r")
+                listfile = open("/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/harvesting/%s" %input_name, "r")
+		print "open listfile"
                 for dataset in listfile:
                     # Skip empty lines.
                     dataset_stripped = dataset.strip()
@@ -3453,46 +3504,6 @@ class CMSHarvester(object):
                 listfile.close()
             except IOError:
                 msg = "ERROR: Could not open input list file `%s'" % \
-                      input_name
-                self.logger.fatal(msg)
-                raise Error(msg)
-
-        elif input_method == "Jsonrunfile":
-            # We were passed a Jsonfile containing a dictionary of
-            # run/lunisection-pairs
-            self.logger.info("Reading runs from file `%s'" % \
-                             input_name)
-            try:
-                Jsonfile = open(input_name, "r")
-                for names in Jsonfile:
-                    dictNames= eval(str(names))
-                    for key in dictNames:
-                        intkey=int(key)
-                        runs.append(intkey)
-                Jsonfile.close()
-            except IOError:
-                msg = "ERROR: Could not open Jsonfile `%s'" % \
-                      input_name
-                self.logger.fatal(msg)
-                raise Error(msg)
-
-        elif input_method == "Jsonfile":
-	    self.Jsonlumi = True
-	    self.Jsonfilename = input_name
-            # We were passed a Jsonfile containing a dictionary of
-            # run/lunisection-pairs
-            self.logger.info("Reading runs and lumisections from file `%s'" % \
-                             input_name)
-            try:
-                Jsonfile = open(input_name, "r")
-                for names in Jsonfile:
-                    dictNames= eval(str(names))
-                    for key in dictNames:
-                        intkey=int(key)
-                        runs.append(intkey)
-                Jsonfile.close()
-            except IOError:
-                msg = "ERROR: Could not open Jsonfile `%s'" % \
                       input_name
                 self.logger.fatal(msg)
                 raise Error(msg)
@@ -3622,8 +3633,6 @@ class CMSHarvester(object):
         for dataset_name in self.datasets_to_use:
             runs_in_dataset = self.datasets_information[dataset_name]["runs"]
 
-
-
             # First some sanity checks.
             runs_to_use_tmp = []
             for run in runs_to_use:
@@ -3656,21 +3665,94 @@ class CMSHarvester(object):
                                   dataset_name))
                 runs = runs_tmp
 
-            not_uploaded_files = []
-            if os.path.exists("upload_bookkeeping.txt"):
-                upload_bookkeeping_file = open("upload_bookkeeping.txt", "r")
-                for name in upload_bookkeeping_file:
-		    not_uploaded=name.replace("run_","")
-		    not_uploaded=not_uploaded.replace("\n","")
-		    not_uploaded_files.append(not_uploaded)
-
-		self.logger.info("%d runs have still to be uploaded " \
-				  % len(not_uploaded_files))
+            if self.todofile != "YourToDofile.txt":
+		runs_todo = []
+                print "Reading runs from file /afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/harvesting/%s" %self.todofile
+                cmd="grep %s /afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/harvesting/%s | cut -f5 -d' '" %(dataset_name,self.todofile)
+                (status, output)=commands.getstatusoutput(cmd)
 		for run in runs:
-		    if not run in not_uploaded_files: 
-			runs.remove(run)
+		    run_str="%s" %run
+		    if run_str in output:
+			runs_todo.append(run)
+                self.logger.info("Using %d runs " \
+                                 "of dataset `%s'" % \
+                                 (len(runs_todo),
+                                  dataset_name))
+		runs=runs_todo
 
-	    
+	    Json_runs = []
+	    if self.Jsonfilename != "YourJSON.txt":
+		good_runs = []
+		self.Jsonlumi = True
+		# We were passed a Jsonfile containing a dictionary of
+		# run/lunisection-pairs
+		self.logger.info("Reading runs and lumisections from file `%s'" % \
+				self.Jsonfilename)
+		try:
+		    Jsonfile = open(self.Jsonfilename, "r")
+		    for names in Jsonfile:
+			dictNames= eval(str(names))
+			for key in dictNames:
+			    intkey=int(key)
+			    Json_runs.append(intkey)
+		    Jsonfile.close()
+		except IOError:
+		    msg = "ERROR: Could not open Jsonfile `%s'" % \
+			  input_name
+		    self.logger.fatal(msg)
+		    raise Error(msg)
+		for run in runs:
+		    if run in Json_runs:
+			good_runs.append(run)
+		self.logger.info("Using %d runs " \
+                                 "of dataset `%s'" % \
+                                 (len(good_runs),
+                                  dataset_name))
+		runs=good_runs
+            if (self.Jsonrunfilename != "YourJSON.txt") and (self.Jsonfilename == "YourJSON.txt"):
+		good_runs = []
+                # We were passed a Jsonfile containing a dictionary of
+		# run/lunisection-pairs
+	        self.logger.info("Reading runs from file `%s'" % \
+				self.Jsonrunfilename)
+		try:
+		    Jsonfile = open(self.Jsonrunfilename, "r")
+		    for names in Jsonfile:
+	                dictNames= eval(str(names))
+			for key in dictNames:
+			    intkey=int(key)
+			    Json_runs.append(intkey)
+		    Jsonfile.close()
+		except IOError:
+		    msg = "ERROR: Could not open Jsonfile `%s'" % \
+			  input_name
+		    self.logger.fatal(msg)
+		    raise Error(msg)
+	    	for run in runs:
+	            if run in Json_runs: 
+                        good_runs.append(run)
+                self.logger.info("Using %d runs " \
+                                 "of dataset `%s'" % \
+                                 (len(good_runs),
+                                  dataset_name))
+		runs=good_runs
+
+            #not_uploaded_files = []
+            #if os.path.exists("upload_bookkeeping.txt"):
+            #    upload_bookkeeping_file = open("upload_bookkeeping.txt", "r")
+            #    for name in upload_bookkeeping_file:
+            #        not_uploaded=name.replace("run_","")
+	    #	    not_uploaded=not_uploaded.replace("\n","")
+	    #	    not_uploaded_files.append(not_uploaded)
+
+		self.logger.info("Reading runs from file upload_bookkeeping.txt")
+	    	for run in runs:
+	            if not run in not_uploaded_files: 
+                        runs.remove(run)
+                self.logger.info("Using %d runs " \
+                                 "of dataset `%s'" % \
+                                 (len(runs),
+                                  dataset_name))
 
             self.datasets_to_use[dataset_name] = runs
 
@@ -4453,17 +4535,22 @@ class CMSHarvester(object):
 			    ##------
 
 			    castor_dir = castor_dir.replace(castor_prefix, "")
+			    multicrab_config_lines.append("USER.storage_element=srm-cms.cern.ch")
+			    multicrab_config_lines.append("USER.user_remote_dir = %s" % \
+						      castor_dir)
+			    multicrab_config_lines.append("USER.check_user_remote_dir=0")
+
 			    if site_name == "caf.cern.ch":
-			        multicrab_config_lines.append("USER.storage_element=T2_CH_CAF")
-				castor_dir = castor_dir.replace("/cms/store/caf/user/%s" %UserName, "")
-				multicrab_config_lines.append("USER.user_remote_dir = %s" % \
-						      castor_dir)
-				multicrab_config_lines.append("USER.check_user_remote_dir=0")
+				multicrab_config_lines.append("USER.storage_path=%s" % castor_prefix)
+			        #multicrab_config_lines.append("USER.storage_element=T2_CH_CAF")
+				#castor_dir = castor_dir.replace("/cms/store/caf/user/%s" %UserName, "")
+				#multicrab_config_lines.append("USER.user_remote_dir = %s" % \
+				#		      castor_dir)
 			    else:
-				multicrab_config_lines.append("USER.user_remote_dir = %s" % \
-						      castor_dir)
-				multicrab_config_lines.append("USER.storage_element=srm-cms.cern.ch")
                                 multicrab_config_lines.append("USER.storage_path=/srm/managerv2?SFN=%s" % castor_prefix)
+				#multicrab_config_lines.append("USER.user_remote_dir = %s" % \
+				#		      castor_dir)
+				#multicrab_config_lines.append("USER.storage_element=srm-cms.cern.ch")
 
 			    ## CMSSW
 			    ##-------
@@ -5648,16 +5735,16 @@ class CMSHarvester(object):
 	    tmp_upload.append("")
 
 	    # Write upload file.
-	    if os.path.exists("upload_to_GUI.sh"):
-	        print "Script for upload to GUI already exists"
-	    else:
-		upload_contents = "\n".join(tmp_upload)
-		upload_file_name = "upload_to_GUI.sh"
-		upload_file = file(upload_file_name, "w")
-		upload_file.write(upload_contents)
-		upload_file.close()
-		os.system("chmod +x upload_to_GUI.sh")
-		print "Creating script for upload to GUI"
+	    #if os.path.exists("upload_to_GUI.sh"):
+	    #    print "Script for upload to GUI already exists"
+	    #else:
+	    #	upload_contents = "\n".join(tmp_upload)
+	    #	upload_file_name = "upload_to_GUI.sh"
+	    #	upload_file = file(upload_file_name, "w")
+       	    #	upload_file.write(upload_contents)
+	    #	upload_file.close()
+	    #	os.system("chmod +x upload_to_GUI.sh")
+	    #	print "Creating script for upload to GUI"
 
             castor_paths = dict(zip(runs,
                                     [self.create_castor_path_name_special(dataset_name, i, castor_path_common) \
@@ -5952,6 +6039,10 @@ class CMSHarvester(object):
             self.cleanup()
 
         ###
+
+        if self.crab_submission == True:
+            os.system("multicrab -create")
+            os.system("multicrab -submit")
 
         # End of run.
         return exit_code
