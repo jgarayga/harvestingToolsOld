@@ -1,8 +1,6 @@
-#!/usr/bin/env perl
+#!/usr/bin/env perl 
 
-#####/usr/bin/perl -w 
-
-############################################################################
+###############################################################################
 #                                                                             #
 #   Script to check the status of DQM Harvesting jobs                         #
 #                                                                             #
@@ -95,8 +93,13 @@ foreach $line (@lines) {
     if ($line =~ /USER.user_remote_dir/) {
 
 	my @words = split (/ = /,$line);
-	my $castordir=$castorbase.$words[1];
-	chop($castordir); #remove newline at the end
+	chop($words[1]);
+	my $castordir=$castorbase.$words[1];  # ADD JOB NAME IN CASTOR DIRECTORY!
+	# MODIFICATION: to account for the fact that multicrab adds job name in directory tree for output!!!
+	$castordir=$castordir."/".$job;
+#	print "CASTOR DIR: $castordir \n";
+	# this lines needs to be commented out to account for the above modification
+#	chop($castordir); #remove newline at the end
 
 	if ( -e $tempfile ) {
 	    system "rm $tempfile";
