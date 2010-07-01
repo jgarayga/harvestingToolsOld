@@ -1619,7 +1619,7 @@ class CMSHarvester(object):
                 if status != 0:
                     # Path does not exist, let's try and create it.
                     self.logger.debug("Creating path `%s'" % path)
-                    cmd = "nsmkdir %s" % path
+                    cmd = "nsmkdir -m 775 %s" % path
                     (status, output) = commands.getstatusoutput(cmd)
                     if status != 0:
                         msg = "Could not create directory `%s'" % path
