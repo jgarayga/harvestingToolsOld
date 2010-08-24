@@ -2062,19 +2062,6 @@ class CMSHarvester(object):
                           type="string",
                           metavar="TODO-FILE")
 
-
-        # Option to specify which file to use for the book keeping
-        # information.
-        parser.add_option("", "--bookkeepingfile",
-                          help="File to be used to keep track " \
-                          "of which datasets and runs have " \
-                          "already been processed. Default: `%s'." % \
-                          self.book_keeping_file_name_default,
-                          action="callback",
-                          callback=self.option_handler_book_keeping_file,
-                          type="string",
-                          metavar="BOOKKEEPING-FILE")
-
         # Option to specify which file to use for the dataset name to
         # reference histogram name mappings.
         parser.add_option("", "--refhistmappingfile",
@@ -2240,17 +2227,6 @@ class CMSHarvester(object):
         # If we get here, we should also have an input name.
         assert not self.input_name["datasets"]["use"] is None
         # DEBUG DEBUG DEBUG end
-
-        ###
-
-        # We would like to be able to store the book keeping but we
-        # need to know where it should go.
-        if self.book_keeping_file_name is None:
-            self.book_keeping_file_name = self.book_keeping_file_name_default
-            msg = "No book keeping file specified --> using default `%s'" % \
-                  self.book_keeping_file_name
-            self.logger.warning(msg)
-            #raise Usage(msg)
 
         ###
 
@@ -3737,82 +3713,9 @@ class CMSHarvester(object):
                                   dataset_name))
 		runs=good_runs
 
-            #not_uploaded_files = []
-            #if os.path.exists("upload_bookkeeping.txt"):
-            #    upload_bookkeeping_file = open("upload_bookkeeping.txt", "r")
-            #    for name in upload_bookkeeping_file:
-            #        not_uploaded=name.replace("run_","")
-	    #	    not_uploaded=not_uploaded.replace("\n","")
-	    #	    not_uploaded_files.append(not_uploaded)
-
-		self.logger.info("Reading runs from file upload_bookkeeping.txt")
-	    	for run in runs:
-	            if not run in not_uploaded_files: 
-                        runs.remove(run)
-                self.logger.info("Using %d runs " \
-                                 "of dataset `%s'" % \
-                                 (len(runs),
-                                  dataset_name))
-
             self.datasets_to_use[dataset_name] = runs
 
         # End of process_runs_use_and_ignore_lists().
-
-    ##########
-
-    def process_book_keeping(self):
-        """Fold the results of the book keeping we read into the list of
-        things to do.
-
-        The difference with the processing of the ignore-list is that
-        that list contains dataset names, i.e. complete datasets,
-        whereas this list is a nested list of datasets and run
-        numbers.
-
-        """
-
-        self.logger.info("Processing book keeping information " \
-                         "(from previous runs I presume)...")
-
-        self.logger.debug("Before processing the book keeping there are %d " \
-                          "datasets in the list to be processed" % \
-                          len(self.datasets_to_use))
-
-        # Simple approach: just loop and search.
-        dataset_names_filtered = copy.deepcopy(self.datasets_to_use)
-        nruns_removed = 0
-        for (dataset_name, runs) in self.datasets_to_use.iteritems():
-            if dataset_name in self.book_keeping_information.keys():
-                for run in runs:
-                    if run in self.book_keeping_information[dataset_name]:
-                        # Don't forget to check event counts. It could
-                        # be that since we processed this run more
-                        # events have become available.
-                        num_events_processed = self.book_keeping_information \
-                                               [dataset_name][run]
-                        num_events_now = self.datasets_information \
-                                         [dataset_name]["num_events"][run]
-                        if num_events_processed >= num_events_now:
-                            dataset_names_filtered[dataset_name].remove(run)
-                            nruns_removed = nruns_removed + 1
-                # Clean out empty datasets (just in case we removed
-                # all runs).
-                if len(dataset_names_filtered[dataset_name]) < 1:
-                    del dataset_names_filtered[dataset_name]
-
-        self.logger.info("  --> Removed %d dataset(s) that I " \
-                         "(think I) already processed previously" % \
-                         (len(self.datasets_to_use) -
-                          len(dataset_names_filtered)))
-        self.logger.info("      (for a total of %d run(s))" % nruns_removed)
-
-        self.datasets_to_use = dataset_names_filtered
-
-        self.logger.debug("After processing the book keeping there are %d " \
-                          "datasets in the list to be processed" % \
-                          len(self.datasets_to_use))
-
-        # End of process_book_keeping.
 
     ##########
 
@@ -4069,14 +3972,15 @@ class CMSHarvester(object):
                                     "--> skipping" % msg)
                 # Update the book keeping with all the runs in the dataset.
                 # DEBUG DEBUG DEBUG
-                assert set([j for (i, j) in self.datasets_information \
-                            [dataset_name]["num_events"].items() \
-                            if i in self.datasets_to_use[dataset_name]]) == \
-                            set([0])
+                #assert set([j for (i, j) in self.datasets_information \
+                #            [dataset_name]["num_events"].items() \
+                #            if i in self.datasets_to_use[dataset_name]]) == \
+                #           set([0])
                 # DEBUG DEBUG DEBUG end
-                self.book_keeping_information[dataset_name] = self.datasets_information \
-                                                              [dataset_name]["num_events"]
+                #self.book_keeping_information[dataset_name] = self.datasets_information \
+                #                                              [dataset_name]["num_events"]
                 continue
+	      
             tmp = [i for i in \
                    self.datasets_information[dataset_name] \
                    ["num_events"].items() if i[1] < 1]
@@ -4092,21 +3996,6 @@ class CMSHarvester(object):
                                  (len(empty_runs), dataset_name))
                 self.logger.debug("    (%s)" % \
                                   ", ".join([str(i) for i in empty_runs]))
-
-                # Update the book keeping (for single runs this time).
-
-                # DEBUG DEBUG DEBUG
-                # Hmmm, actually that should read BUG BUG BUG. There
-                # is no reason for the below assumption to hold,
-                # right? We could have processed runs from this
-                # dataset in a previous running of the harvester.
-                #assert not self.book_keeping_information.has_key(dataset_name)
-                # DEBUG DEBUG DEBUG end
-
-                if self.book_keeping_information.has_key(dataset_name):
-                    self.book_keeping_information[dataset_name].update(empty_runs)
-                else:
-                    self.book_keeping_information[dataset_name] = empty_runs
 
         ###
 
@@ -4433,18 +4322,12 @@ class CMSHarvester(object):
         dataset_names = self.datasets_to_use.keys()
         dataset_names.sort()
 
-	# Write runlist for upload bookkeeping.
-	tmp_runlist=[]
-
         for dataset_name in dataset_names:
             runs = self.datasets_to_use[dataset_name]
             dataset_name_escaped = self.escape_dataset_name(dataset_name)
             castor_prefix = self.castor_prefix
 
             for run in runs:
-
-		tmp_runlist.append("run_%s" % run)
-                # Begin of block
 
                 # CASTOR output dir.
                 castor_dir = self.datasets_information[dataset_name] \
@@ -4584,18 +4467,6 @@ class CMSHarvester(object):
                             self.all_sites_found = True
 
 	multicrab_config = "\n".join(multicrab_config_lines)
-
-	# Write upload_bookkeeping_file.
-	if os.path.exists("upload_bookkeeping.txt"):
-	    print "Bookkeeping file for upload to GUI already exists"
-	else:
-	    upload_bookkeeping_contents = "\n".join(tmp_runlist)
-	    upload_bookkeeping_file_name = "upload_bookkeeping.txt"
-	    upload_bookkeeping_file = file(upload_bookkeeping_file_name, "w")
-	    upload_bookkeeping_file.write(upload_bookkeeping_contents)
-	    upload_bookkeeping_file.close()
-	    os.system("chmod +x upload_bookkeeping.txt")
-	    print "Creating bookkeeping file for upload to GUI"
 
         # End of create_multicrab_config.
         return multicrab_config
@@ -5264,65 +5135,7 @@ class CMSHarvester(object):
 
     ##########
 
-    def read_book_keeping(self):
-        """Read any book keeping information if present.
-
-        Read the book keeping information from previous runs if
-        present. If the file does not exist we keep going, it will be
-        created at the time we want to write out the book keeping
-        information of this run.
-
-        """
-
-        self.logger.info("Reading book keeping information")
-
-        file_name = self.book_keeping_file_name
-        self.logger.debug("Reading book keeping information " \
-                          "from previous runs from file `%s'" % \
-                          file_name)
-
-        try:
-            in_file = open(file_name, "r")
-            # Okay, not very safe, but this is the only way with
-            # built-in Python tools to serialize something while
-            # keeping it human-readable. And I _did_ do something to
-            # make it less dangerous.
-            for line in in_file:
-                line = line.strip()
-                if len(line) < 1:
-                    continue
-                if not line.startswith("#"):
-                    tmp = eval(line, {"__builtins__": {}})
-                    # DEBUG DEBUG DEBUG
-                    assert type(tmp) == type(self.book_keeping_information)
-                    # DEBUG DEBUG DEBUG end
-                    self.book_keeping_information.update(tmp)
-            in_file.close()
-        except IOError, err:
-            # No big deal if the file does not exist. Halt for more
-            # serious problems.
-            errno = err.errno
-            if errno == 2:
-                # This is `No such file or directory'.
-                self.logger.warning("Book keeping file does not yet exist " \
-                                    "(which is fine, just continue " \
-                                    "with a clean slate and use it " \
-                                    "for output only)")
-            else:
-                # Hmm, sounds more serious, let's abort.
-                msg = "Could not read from book keeping file `%s'" % file_name
-                self.logger.fatal(msg)
-                raise Error(msg)
-
-        self.logger.info("  found %d dataset(s) for a total of %d run(s)" % \
-                         (len(self.book_keeping_information),
-                          sum([len(i) for i in \
-                               self.book_keeping_information.values()])))
-
-        # End of read_book_keeping.
-
-    ##########
-
+    
     def ref_hist_mappings_needed(self, dataset_name=None):
         """Check if we need to load and check the reference mappings.
 
@@ -5473,73 +5286,6 @@ class CMSHarvester(object):
 
     ##########
 
-    def write_book_keeping_file(self):
-        """Write the book keeping for this run to file.
-
-        Write the book keeping for this run (of the cmsHarvester) to
-        file. Note that we _re_write the original file if present. But
-        you never expected the cmsHarvester to be thread-safe, did
-        you? ;-)
-
-        NOTE: Since this is a point we would _always_ like to reach,
-        even if an exception was thrown and even if the input was not
-        good enough to even start doing anything, we have to be a bit
-        careful.
-
-        """
-
-        # Little local helper function.
-        def dump_to_screen(contents):
-            sep_line = "-" * 50
-            self.logger.info(sep_line)
-            self.logger.info("!!! Dumping book keeping information " \
-                             "to screen as backup measure: !!!")
-            self.logger.info(sep_line)
-            self.logger.info(contents)
-            self.logger.info(sep_line)
-
-        ###
-
-        file_name = self.book_keeping_file_name
-        self.logger.debug("Writing book keeping information to file `%s'" % \
-                          file_name)
-
-        contents_lines = []
-        contents_lines.append("# %s" % self.time_stamp())
-        contents_lines.append("# Created by %s" % self.ident_string())
-        contents_lines.append("")
-        contents_lines.append("# Format: Python dictionary with")
-        contents_lines.append("# dataset name as key,")
-        contents_lines.append("# dict of processed runs into number of")
-        contents_lines.append("# processed events as value.")
-        contents_lines.append("# Everything present in the dictionary")
-        contents_lines.append("# has been processed by cmsHarvester.")
-        contents_lines.append("# Admittedly this only means that the")
-        contents_lines.append("# configurations were created at some point.")
-        contents_lines.append("")
-        contents_lines.append(repr(self.book_keeping_information))
-        contents = "\n".join(contents_lines)
-        try:
-            out_file = open(file_name, "w")
-            time_stamp = self.time_stamp()
-            out_file.write("# %s\n" % time_stamp)
-            out_file.write("%s\n" % contents)
-            out_file.close()
-        except Exception:
-            # Frak! Could not do the book keeping. Whine to the user
-            # and dump book keeping info to the screen. That way at
-            # least the user can copy-paste things to salvage them. No
-            # need to raise any exceptions here after that.
-            msg = "Could not write book keeping information to file `%s'" % \
-                  file_name
-            self.logger.error(msg)
-            # Dump book keeping information to the screen.
-            dump_to_screen(contents)
-
-        # End of write_book_keeping_file.
-
-    ##########
-
     def build_datasets_information(self):
         """Obtain all information on the datasets that we need to run.
 
@@ -5677,75 +5423,6 @@ class CMSHarvester(object):
             self.logger.info("    output will go into `%s'" % \
                              castor_path_common)
 
-	    #if os.path.exists("Upload") == False:
-	    #    os.mkdir("Upload")
-
-	    # Write content of upload file.
-	    tmp_upload=[]
-	    tmp_upload.append("#!/bin/zsh")
-	    tmp_upload.append("")
-	    tmp_upload.append(self.config_file_header())
-	    tmp_upload.append("")
-	    tmp_upload.append("# Script for uploading harvesting output files to a GUI server")
-	    tmp_upload.append("# Server's URL has to be passed as argument, e.g.")
-	    tmp_upload.append("#./upload_to_GUI.sh https://cmsweb.cern.ch/dqm/offline")
-	    tmp_upload.append("#")
-	    tmp_upload.append("# List of runs to be uploaded is written to uplaod_bookkeeping.txt by the cmsHarvester.")
-	    tmp_upload.append("# Uploaded runs are removed from the runlist to avoid multiple uploading,")
-	    tmp_upload.append("# so that this script may be executed any times.")
-	    tmp_upload.append("")
-	    tmp_upload.append("castordir=%s" % castor_path_common)
-	    tmp_upload.append("for run in `nsls $castordir`;")
-	    tmp_upload.append("do")
-	    tmp_upload.append("test=`grep -c \"$run\" upload_bookkeeping.txt`")
-	    tmp_upload.append("if [ $test -eq 1 ];")
-	    tmp_upload.append("then")
-	    tmp_upload.append("rundir=$castordir/$run")
-	    tmp_upload.append("for nevents in `nsls $rundir`;")
-	    tmp_upload.append("do")
-	    tmp_upload.append("neventsdir=$rundir/$nevents")
-	    tmp_upload.append("for section in `nsls $neventsdir`;")
-	    tmp_upload.append("do")
-	    tmp_upload.append("sectiondir=$neventsdir/$section")
-	    tmp_upload.append("for file in `nsls $sectiondir`;")
-	    tmp_upload.append("do")
-	    tmp_upload.append("rootfile=$sectiondir/$file")
-	    tmp_upload.append("echo $rootfile")
-	    tmp_upload.append("size=`rfstat $rootfile | grep Size | perl -pe 's/Size \(bytes\)    \: //'`")
-	    tmp_upload.append("if [ $size -ne 0 ];")
-	    tmp_upload.append("then")
-	    tmp_upload.append("sectiontest=`grep -c \"$run\" upload_bookkeeping.txt`")
-	    tmp_upload.append("if [ $sectiontest -eq 1 ];")
-	    tmp_upload.append("then")
-	    tmp_upload.append("ffile=DQM_V0$(echo $rootfile | perl -pe 's/.*\/DQM_V0// ; s/_1.root/.root/ ; s/_2.root/.root/ ; s/_1.root/.root/')")
-	    tmp_upload.append("rfcp $rootfile ./$ffile")
-	    tmp_upload.append("#./VisMonitoring/DQMServer/scripts/visDQMUpload https://cmsweb.cern.ch/dqm/dev $ffile")
-	    tmp_upload.append("#./VisMonitoring/DQMServer/scripts/visDQMUpload https://cmsweb.cern.ch/dqm/offline $ffile")
-	    tmp_upload.append("./VisMonitoring/DQMServer/scripts/visDQMUpload $1 $ffile")
-	    tmp_upload.append("echo $ffile is uploaded")
-	    tmp_upload.append("rm $ffile")
-	    tmp_upload.append("sed -i /$run/d upload_bookkeeping.txt")
-	    tmp_upload.append("fi")
-	    tmp_upload.append("fi")
-	    tmp_upload.append("done")	
-	    tmp_upload.append("done")
-	    tmp_upload.append("done")
-	    tmp_upload.append("fi")
-	    tmp_upload.append("done")
-	    tmp_upload.append("")
-
-	    # Write upload file.
-	    #if os.path.exists("upload_to_GUI.sh"):
-	    #    print "Script for upload to GUI already exists"
-	    #else:
-	    #	upload_contents = "\n".join(tmp_upload)
-	    #	upload_file_name = "upload_to_GUI.sh"
-	    #	upload_file = file(upload_file_name, "w")
-       	    #	upload_file.write(upload_contents)
-	    #	upload_file.close()
-	    #	os.system("chmod +x upload_to_GUI.sh")
-	    #	print "Creating script for upload to GUI"
-
             castor_paths = dict(zip(runs,
                                     [self.create_castor_path_name_special(dataset_name, i, castor_path_common) \
                                      for i in runs]))
@@ -5848,11 +5525,6 @@ class CMSHarvester(object):
                 self.build_runs_use_list()
                 self.build_runs_ignore_list()
 
-                # Read book keeping file. This _could_ contain a list
-                # of things we have already done previously, so we
-                # want to skip those.
-                self.read_book_keeping()
-
                 # Process the list of datasets to ignore and fold that
                 # into the list of datasets to consider.
                 # NOTE: The run-based selection is done later since
@@ -5891,10 +5563,6 @@ class CMSHarvester(object):
                 # OBSOLETE OBSOLETE OBSOLETE end
 
                 self.process_runs_use_and_ignore_lists()
-
-                # Process the datasets and runs that we have already
-                # done according to the book keeping.
-                self.process_book_keeping()
 
                 # If we've been asked to sacrifice some parts of
                 # spread-out samples in order to be able to partially
@@ -6027,14 +5695,6 @@ class CMSHarvester(object):
         # were created before e.g. the disk was full, we should still
         # have a consistent book keeping file.
         finally:
-
-            # The only reason not to write any book keeping
-            # information is if there is none. This has the benefit of
-            # making sure that if an exception was raised while trying
-            # to read the original book keeping file, we don't mess up
-            # by trying to access that file again to write to it.
-            if len(self.book_keeping_information) > 0:
-                self.write_book_keeping_file()
 
             self.cleanup()
 
