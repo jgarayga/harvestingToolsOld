@@ -33,7 +33,7 @@ methods.
 
 ###########################################################################
 
-__version__ = "3.0.0"
+__version__ = "3.8.2p1" # (version jump to match release)
 __author__ = "Jeroen Hegeman (jeroen.hegeman@cern.ch)," \
              "Niklas Pietsch (niklas.pietsch@desy.de)"
 
@@ -4731,6 +4731,7 @@ class CMSHarvester(object):
         # This seems to be new in CMSSW 3.3.0.pre6, no clue what it
         # does.
         config_options.himix = "dummy_value"
+	config_options.dbsquery = ""
 
         ###
 
