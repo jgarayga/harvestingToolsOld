@@ -3361,7 +3361,7 @@ class CMSHarvester(object):
             self.logger.info("Reading input from list file `%s'" % \
                              input_name)
             try:
-                listfile = open("/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/harvesting/%s" %input_name, "r")
+                listfile = open("/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/harvesting/bin/%s" %input_name, "r")
 		print "open listfile"
                 for dataset in listfile:
                     # Skip empty lines.
