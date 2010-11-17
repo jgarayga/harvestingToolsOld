@@ -4270,7 +4270,10 @@ class CMSHarvester(object):
 	    tmp.append("lumi_mask = %s" % self.Jsonfilename)
 	    tmp.append("total_number_of_lumis = -1")
 	else:
-	    tmp.append("total_number_of_events = -1")
+            if self.harvesting_type == "DQMOffline":
+                tmp.append("total_number_of_lumis = -1")
+            else:
+                tmp.append("total_number_of_events = -1")
         if self.harvesting_mode.find("single-step") > -1:
             tmp.append("# Force everything to run in one job.")
             tmp.append("no_block_boundary = 1")
@@ -4447,8 +4450,11 @@ class CMSHarvester(object):
 			    if self.Jsonlumi == True:
 				pass
 			    else:
-				multicrab_config_lines.append("CMSSW.total_number_of_events = %d" % \
-					      nevents)
+                                if self.harvesting_type == "DQMOffline":
+                                    pass
+                                else:
+                                    multicrab_config_lines.append("CMSSW.total_number_of_events = %d" % \
+                                                                  nevents)
                             # The output file name.
                             multicrab_config_lines.append("CMSSW.output_file = %s" % \
                                                       output_file_name)
