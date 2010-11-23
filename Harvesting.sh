@@ -26,10 +26,10 @@ else
 fi
 
 . /afs/cern.ch/cms/sw/cmsset_default.sh
-cd /afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/harvesting/CMSSW_3_6_2/src
+cd /afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/harvesting/CMSSW_3_8_6/src
 source /afs/cern.ch/cms/LCG/LCG-2/UI/cms_ui_env.sh
 cmsenv
-source /afs/cern.ch/cms/ccs/wm/scripts/Crab/CRAB_2_7_2/crab.sh
+source /afs/cern.ch/cms/ccs/wm/scripts/Crab/CRAB_2_7_5_patch1/crab.sh
 pushd /afs/cern.ch/cms/sw/${SCRAM_ARCH}/cms/dbs-client/DBS_2_0_9_patch_4-cms/lib
 source setup.sh
 popd
@@ -44,7 +44,6 @@ export CMS_PATH=/afs/cern.ch/cms/sw
 
 voms-proxy-init
 
-
 ####
 basedir=/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/harvesting
 bindir=$basedir/bin
@@ -54,9 +53,9 @@ pwd
 
 outfiledate=DQM_${date}.txt
 prevfile=DQM_prev.txt
-difffiledate=DQM_${date}.log
+#difffiledate=DQM_${date}.log
 todofiledate=DQM_${date}.todo
-datafiledate=DQM_${date}.datasets
+#datafiledate=DQM_${date}.datasets
 
 ####
 # remove previous stuff
@@ -68,8 +67,8 @@ rm -fr $basedir/CMSSW*/harvesting_area/harvesting*
 rm -fr $basedir/CMSSW*/harvesting_area/multicrab*
 echo "cleaning done"
 
-echo $difffiledate $outfiledate
-rm -fr $outfiledate $difffiledate help1 help2 help3 help4
+echo $outfiledate
+rm -fr $outfiledate help1 help2
 touch $outfiledate
 
 ####
@@ -81,40 +80,31 @@ echo Checking DBS for new datasets at `date`
 echo
 echo
 
-dbs search --query="find dataset, run, release, dataset.tag, datatype, procds.moddate where dataset like %/DQM and site = caf.cern.ch" file.status = valid | grep DQM >> $outfiledate
+dbs search --query="find dataset, release, dataset.tag, datatype where dataset like %/DQM and site = caf.cern.ch" file.status = valid | grep DQM >> $outfiledate
 
 ####
 # sort outfile
-sort $outfiledate > help1 
-uniq help1 > help2
-mv help2 $outfiledate
-
-sort $prevfile > help3
-uniq help3 > help4
-mv help4 $prevfile
-
-diff $outfiledate $prevfile | grep "<" > $difffiledate
+sort -u $outfiledate > help1 
+mv help1 $outfiledate
+sort -u  $prevfile > help2
+mv help2 $prevfile
+diff $outfiledate $prevfile | awk '{print $2" "$3" "$4" "$5}' | grep DQM | sort -u > $todofiledate
 
 if [ `wc -l $outfiledate | awk '{print $1}'` -ne 0 ]; then
 rm -fr $prevfile
 sort $outfiledate > $prevfile
 fi
 
-grep DQM $difffiledate > $outdir/$difffiledate
-
 ###
 # if non-zero then produce todo files and all the rest
-if [ `wc -l $outdir/$difffiledate | awk '{print $1}'` -ne 0 ] ; then
-cp $difffiledate $todofiledate
-cp $outdir/$difffiledate $outdir/$todofiledate
+if [ `wc -l $todofiledate | awk '{print $1}'` -ne 0 ] ; then
+cp $todofiledate $outdir/$todofiledate
 
-cat $todofiledate | awk '{print $2" "$4" "$5" "$6}' | uniq > $datafiledate
-cp $datafiledate $outdir/$datafiledate
 
-for i in `sort $todofiledate | awk '{print $4}' | uniq` ; do
+for i in `awk '{print $2}' $todofiledate | sort -u` ; do
 rm -fr DQM_${date}.$i
-sort $todofiledate | grep $i" " | grep "  mc" | awk '{print $2" "$4" "$5" "$6}' | uniq > DQM_${date}.mc.$i
-sort $todofiledate | grep $i" " | grep "  data" | awk '{print $2" "$4" "$5" "$6}' | uniq > DQM_${date}.data.$i
+sort -u $todofiledate | grep $i" " | grep "mc" | awk '{print $1" "$2" "$3" "$4}' > DQM_${date}.mc.$i
+sort -u $todofiledate | grep $i" " | grep "data" | awk '{print $1" "$2" "$3" "$4}' > DQM_${date}.data.$i
 done
 
 ###
@@ -139,7 +129,9 @@ cp DQM_${date}.*.CMSSW* $outdir/.
 
 cd $outdir
 
+##-------------------------------------------
 ## loop over all datasets
+##-------------------------------------------
 
 for i in `ls DQM_${date}.*.CMSSW*` ; do
 
@@ -198,22 +190,12 @@ echo Running the harvester at `date` ...
 echo 
 echo 
 
-if [ $cmssw = "CMSSW_3_6_1_patch4" ] ; then
-  ./cmsHarvester.py --dataset=$dataset --harvesting_type=$htype \
-  --globaltag=$tag --site=CAF --no-ref-hists --force 
-else
-  if [ $cmssw = "CMSSW_3_7_0_patch2" ] ; then
+if [ $dtype = "data" ] ; then 
     ./cmsHarvester.py --dataset=$dataset --harvesting_type=$htype \
-    --globaltag=$tag --site=CAF --no-ref-hists --Jsonfile=$bindir/JSON.txt --forc
-  else
-    if [ $dtype = "data" ] ; then 
-      ./cmsHarvester.py --dataset=$dataset --harvesting_type=$htype \
-      --globaltag=$tag --site=CAF --force
-    else
-      ./cmsHarvester.py --dataset=$dataset --harvesting_type=$htype \
-      --globaltag=$tag --site=CAF --no-ref-hists --force
-    fi
-  fi
+	--globaltag=$tag --site=CAF --force --Jsonfile=/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/harvesting/bin/JSON.txt
+else
+    ./cmsHarvester.py --dataset=$dataset --harvesting_type=$htype \
+	--globaltag=$tag --site=CAF --no-ref-hists --force
 fi
 
 echo 
@@ -237,16 +219,18 @@ cd $outdir
 done
 done
 
+##---------------------------------------------------
 ## ... end loop
+##---------------------------------------------------
 
 fi
 
 cd $bindir
-rm -fr help2 help1 help3 help4
+rm -fr help2 help1
 rm -f $LOCK
 
 echo 
 echo "=========================================================="
 echo End Harvesting script at `date`
 echo "=========================================================="
-echo 
+echo
