@@ -53,7 +53,9 @@ rootfile=$sectiondir/$file
 size=`rfstat $rootfile | grep Size | perl -pe 's/Size \(bytes\)    \: //'`
 if [ $size -ne 0 ];
 then
-ffile=DQM_V0$(echo $rootfile | perl -pe 's/.*\/DQM_V0// ; s/_1.root/.root/ ; s/_2.root/.root/ ; s/_3.root/.root/ ; s/_4.root/.root/ ; s/_5.root/.root/ ; s/_1.root/.root/')
+## Definition of ffile changed due to upgrade to crab 2_7_5
+##ffile=DQM_V0$(echo $rootfile | perl -pe 's/.*\/DQM_V0// ; s/_1.root/.root/ ; s/_2.root/.root/; s/_3.root/.root/ ; s/_4.root/.root/ ; s/_5.root/.root/ ; s/_1.root/.root/')
+ffile=DQM_V0$(echo $rootfile | perl -pe 's/.*\/DQM_V0// ; s/__DQM.*/__DQM.root/')
 file_test=`grep -c "$ffile" upload_bookkeeping.txt`
 if [ $file_test -eq 0 ];
 then
