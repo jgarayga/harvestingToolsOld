@@ -4809,12 +4809,11 @@ class CMSHarvester(object):
 
         customisations.append("# Now follow some customisations")
         customisations.append("")
-
         connect_name = self.frontier_connection_name["globaltag"]
         connect_name += self.db_account_name_cms_cond_globaltag()
         customisations.append("process.GlobalTag.connect = \"%s\"" % \
                               connect_name)
-
+        customisations.append("process.dqmSaver.saveByLumiSection = 1")
         customisations.append("")
 
         # About the reference histograms... For data there is only one
