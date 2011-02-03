@@ -443,6 +443,7 @@ class CMSHarvester(object):
         # track of that special mode.
         self.non_t1access = False
 	self.caf_access = False
+        self.saveByLumiSection = False
         self.crab_submission = False
         self.nr_max_sites = 1
 
@@ -1108,6 +1109,18 @@ class CMSHarvester(object):
                             "further promises...")
 
         # End of option_handler_caf_access.
+        
+   ##########
+
+    def option_handler_saveByLumiSection(self, option, opt_str, value, parser):
+        """Set process.dqmSaver.saveByLumiSectiont=1 in cfg harvesting file
+        """
+        self.saveByLumiSection = True
+
+        self.logger.warning("waning concerning saveByLumiSection option")
+
+        # End of option_handler_saveByLumiSection.
+
 
     ##########
 
@@ -2099,6 +2112,12 @@ class CMSHarvester(object):
                           "on CAF",
                           action="callback",
                           callback=self.option_handler_caf_access)
+                          
+        # set process.dqmSaver.saveByLumiSection=1 in harvesting cfg file
+        parser.add_option("", "--saveByLumiSection",
+                          help="set saveByLumiSection=1 in harvesting cfg file",
+                          action="callback",
+                          callback=self.option_handler_saveByLumiSection)
 
         # Use this to enable automatic creation and submission of crab jobs
         parser.add_option("", "--automatic-crab-submission",
@@ -4813,7 +4832,13 @@ class CMSHarvester(object):
         connect_name += self.db_account_name_cms_cond_globaltag()
         customisations.append("process.GlobalTag.connect = \"%s\"" % \
                               connect_name)
-        customisations.append("process.dqmSaver.saveByLumiSection = 1")
+
+        
+        if self.saveByLumiSection == True:
+            customisations.append("process.dqmSaver.saveByLumiSection = 1")
+        ##
+        ##
+        
         customisations.append("")
 
         # About the reference histograms... For data there is only one
