@@ -4,6 +4,7 @@
 ## File       : cmsHarvest.py
 ## Authors    : Jeroen Hegeman (jeroen.hegeman@cern.ch)
 ##              Niklas Pietsch (niklas.pietsch@desy.de)
+##              Franseco Costanza (francesco.costanza@desy.de)
 ## Last change: 20100308
 ##
 ## Purpose    : Main program to run all kinds of harvesting.
@@ -4755,7 +4756,7 @@ class CMSHarvester(object):
         config_options.gflash = "dummy_value"
         # This seems to be new in CMSSW 3.3.0.pre6, no clue what it
         # does.
-        config_options.himix = "dummy_value"
+        #config_options.himix = "dummy_value"
 	config_options.dbsquery = ""
 
         ###
@@ -4781,6 +4782,7 @@ class CMSHarvester(object):
 
         datatype = self.datasets_information[dataset_name]["datatype"]
         config_options.isMC = (datatype.lower() == "mc")
+        config_options.isData = (datatype.lower() == "data")
         globaltag = self.datasets_information[dataset_name]["globaltag"]
 
         config_options.conditions = self.format_conditions_string(globaltag)
